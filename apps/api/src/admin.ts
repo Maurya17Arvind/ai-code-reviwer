@@ -9,6 +9,10 @@
  *
  * The GitLab token is read from GITLAB_TOKEN (never from argv, which is visible in process lists);
  * the GitHub App key from GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH.
+ *
+ * Fix approvals (Phase 6): fixes-list | fixes-show | approvals-request | approvals-approve |
+ * approvals-reject | approvals-list | members-add. Approving needs the approval code of exactly
+ * that request; execution runs in the worker, which re-verifies everything. Merging is never offered.
  */
 import 'reflect-metadata';
 import {
@@ -19,10 +23,22 @@ import {
   loadEnv,
   resolveGitHubAppSettings,
 } from '@acra/configuration';
-import { ConnectionStore, createPrismaClient, ReviewStore } from '@acra/database';
+import { approvalCode } from '@acra/approvals';
+import { ApprovalStore, ConnectionStore, createPrismaClient, ReviewStore } from '@acra/database';
+import { createRedisConnectionOptions, enqueueApprovalExecution, QueueName } from '@acra/queue';
+import { Queue } from 'bullmq';
 import { parseMasterKey } from '@acra/security';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import * as z from 'zod';
+import {
+  addMember,
+  type ApprovalAdminDeps,
+  decideApproval,
+  listApprovals,
+  listFixes,
+  requestApproval,
+  showFix,
+} from './admin/approvals-admin';
 import { connectGitHubInstallation } from './admin/connect-github';
 import { connectGitLabProject } from './admin/connect-gitlab';
 
@@ -130,6 +146,147 @@ program
     } finally {
       await prisma.$disconnect();
     }
+  });
+
+const DataEnvSchema = z.object({ DATABASE_URL: z.string().min(1), REDIS_URL: z.string().min(1) });
+
+/** Opens the stores (and the approvals queue) for one admin command, closing them afterwards. */
+async function withApprovalDeps<T>(action: (deps: ApprovalAdminDeps) => Promise<T>): Promise<T> {
+  loadDotEnvFile();
+  const env = loadEnv(DataEnvSchema);
+  const prisma = createPrismaClient({ databaseUrl: env.DATABASE_URL, poolMax: 2 });
+  const queue = new Queue(QueueName.Approvals, { connection: createRedisConnectionOptions(env.REDIS_URL, 'producer') });
+  try {
+    return await action({
+      approvals: new ApprovalStore(prisma),
+      reviews: new ReviewStore(prisma),
+      connections: new ConnectionStore(prisma),
+      enqueue: (job) => enqueueApprovalExecution(queue, job),
+    });
+  } finally {
+    await queue.close();
+    await prisma.$disconnect();
+  }
+}
+
+const out = (line: string) => process.stdout.write(`${line}\n`);
+
+program
+  .command('members-add')
+  .description('add (or update) an organization member who can request and decide approvals')
+  .requiredOption('--org <slug>', 'organization slug')
+  .requiredOption('--email <email>', 'member e-mail')
+  .requiredOption('--name <name>', 'display name')
+  .addOption(new Option('--role <role>', 'role').choices(['OWNER', 'ADMIN', 'MEMBER', 'VIEWER']).default('MEMBER'))
+  .action(async (o: { org: string; email: string; name: string; role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' }) => {
+    await withApprovalDeps((deps) =>
+      addMember(deps, { organizationSlug: o.org, email: o.email, displayName: o.name, role: o.role }),
+    );
+    out(`Member ${o.email.toLowerCase()} (${o.role}) saved.`);
+  });
+
+program
+  .command('fixes-list')
+  .description('list AI fix proposals of an organization')
+  .requiredOption('--org <slug>', 'organization slug')
+  .action(async (o: { org: string }) => {
+    const fixes = await withApprovalDeps((deps) => listFixes(deps, { organizationSlug: o.org }));
+    if (fixes.length === 0) out('No fix proposals.');
+    for (const f of fixes) out(`${f.id}  ${f.status.padEnd(10)}  !${f.requestId}  ${f.filePath}  ${f.finding.title}`);
+  });
+
+program
+  .command('fixes-show')
+  .description('show a fix proposal with its exact patch')
+  .requiredOption('--org <slug>', 'organization slug')
+  .argument('<fix-id>', 'fix id')
+  .action(async (fixId: string, o: { org: string }) => {
+    const f = await withApprovalDeps((deps) => showFix(deps, { organizationSlug: o.org, fixId }));
+    out(`Fix ${f.id} · ${f.status} · ${f.filePath} · +${f.additions} −${f.deletions} · ${f.provider}/${f.model}`);
+    out(`Finding: ${f.finding.title} (${f.finding.severity}, ${f.finding.category})`);
+    out(`Why (model explanation, unverified): ${f.explanation}`);
+    out(`Reviewed commit ${f.baseSha} · patch sha256 ${f.patchSha256} · branch ${f.branch} → ${f.targetBranch}`);
+    out(f.patch.trimEnd());
+  });
+
+program
+  .command('approvals-list')
+  .description('list approval requests (open ones by default)')
+  .requiredOption('--org <slug>', 'organization slug')
+  .option('--all', 'include finished requests')
+  .action(async (o: { org: string; all?: boolean }) => {
+    const list = await withApprovalDeps((deps) =>
+      listApprovals(deps, { organizationSlug: o.org, all: Boolean(o.all) }),
+    );
+    if (list.length === 0) out('No approval requests.');
+    for (const { request: r } of list) {
+      out(
+        `${r.id}  ${r.status.padEnd(11)}  ${r.operation.kind.padEnd(20)}  fix ${r.operation.fixId}  code ${approvalCode(r)}  expires ${r.expiresAt}`,
+      );
+    }
+  });
+
+program
+  .command('approvals-request')
+  .description('request approval for the next step of a fix: push (branch + commit) or open (MR/PR)')
+  .requiredOption('--org <slug>', 'organization slug')
+  .requiredOption('--fix <id>', 'fix id (see fixes-list)')
+  .addOption(new Option('--step <step>', 'operation to request').choices(['push', 'open']).makeOptionMandatory())
+  .requiredOption('--user <email>', 'requesting organization member')
+  .option('--ttl-hours <hours>', 'expiry in hours (max 168)', '24')
+  .action(async (o: { org: string; fix: string; step: 'push' | 'open'; user: string; ttlHours: string }) => {
+    const ttlHours = Number(o.ttlHours);
+    if (!Number.isFinite(ttlHours) || ttlHours <= 0 || ttlHours > 168) throw new Error('--ttl-hours must be 1–168');
+    const { request, description } = await withApprovalDeps((deps) =>
+      requestApproval(deps, { organizationSlug: o.org, fixId: o.fix, step: o.step, requestedBy: o.user, ttlHours }),
+    );
+    out(`Approval request ${request.id} (pending, expires ${request.expiresAt})`);
+    for (const line of description) out(`  ${line}`);
+    out(`  Bound to reviewed commit ${request.headSha}, patch sha256 ${request.patchSha256 ?? '-'}`);
+    out(
+      `Approval code: ${approvalCode(request)}  (approvals-approve ${request.id} --org ${o.org} --user <email> --code <code>)`,
+    );
+  });
+
+program
+  .command('approvals-approve')
+  .description('approve a pending request as an organization member and queue its execution')
+  .requiredOption('--org <slug>', 'organization slug')
+  .requiredOption('--user <email>', 'deciding organization member (role OWNER, ADMIN or MEMBER)')
+  .requiredOption('--code <code>', 'approval code shown for exactly this request')
+  .argument('<approval-id>', 'approval request id')
+  .action(async (approvalId: string, o: { org: string; user: string; code: string }) => {
+    const result = await withApprovalDeps(async (deps) => {
+      const stored = (await listApprovals(deps, { organizationSlug: o.org, all: true })).find(
+        (a) => a.request.id === approvalId,
+      );
+      if (!stored) throw new Error('Approval request not found');
+      if (approvalCode(stored.request) !== o.code.trim().toLowerCase()) {
+        throw new Error('The approval code does not match this request. Nothing was approved.');
+      }
+      return decideApproval(deps, { organizationSlug: o.org, approvalId, decidedBy: o.user, decision: 'approve' });
+    });
+    out(`Approved ${result.request.id}; execution queued (job ${result.jobId ?? '-'}). Merging stays a human action.`);
+  });
+
+program
+  .command('approvals-reject')
+  .description('reject a pending request')
+  .requiredOption('--org <slug>', 'organization slug')
+  .requiredOption('--user <email>', 'deciding organization member')
+  .option('--reason <text>', 'reason (max 500 characters)')
+  .argument('<approval-id>', 'approval request id')
+  .action(async (approvalId: string, o: { org: string; user: string; reason?: string }) => {
+    await withApprovalDeps((deps) =>
+      decideApproval(deps, {
+        organizationSlug: o.org,
+        approvalId,
+        decidedBy: o.user,
+        decision: 'reject',
+        ...(o.reason ? { reason: o.reason } : {}),
+      }),
+    );
+    out(`Rejected ${approvalId}.`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

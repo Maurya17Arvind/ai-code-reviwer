@@ -43,3 +43,10 @@ without acting as any human user.
 - Rotating the App private key needs only an environment change and a restart. No database migration.
 - Organizations that forbid GitHub Apps cannot use the GitHub integration. That is acceptable, since PATs would
   violate the least-privilege requirement.
+
+## Update (Phase 6, ADR-034)
+
+Executing a human-approved fix (create the fix branch and commit, open the PR) needs `contents:write`. The App
+registration therefore grants **Contents: Read and write**. Only the approval executor requests write tokens
+(`WRITE_TOKEN_PERMISSIONS`), scoped to the one repository and only after the approval was re-verified. Review jobs
+still request `contents:read`.

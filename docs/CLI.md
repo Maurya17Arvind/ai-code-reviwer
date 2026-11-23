@@ -88,6 +88,7 @@ Preview only — nothing was sent to any AI provider or server.
 | 0    | Success (including `--help` / `--version`)                                                                     |
 | 1    | Runtime error: not a repository, unknown or unsafe ref, invalid `ai-review.yaml`, git failure, unknown command |
 | 2    | Conflicting scope flags or a base branch that cannot be determined                                             |
+| 4    | `fix apply/stage/commit/push/open`: approval required but no terminal — re-run with `--approve <code>`         |
 
 ### `ai-review review [scope] [options]`
 
@@ -123,6 +124,30 @@ reviews will not report that issue again (matched by fingerprint, independent of
 
 Renders the latest review. Markdown includes per-provider status, tokens and cost, findings with evidence and
 suggestions, and resolved findings. Untrusted model text is escaped.
+
+## Fixes and approvals (Phase 6)
+
+See [APPROVAL_WORKFLOW.md](./APPROVAL_WORKFLOW.md) for the full model.
+
+| Command                                      | What it does                                                                                                                      | Approval                         |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `fix propose <finding-id> [--provider] [-y]` | One model proposes a minimal fix for one finding; shows the explanation and exact patch. Changes nothing                          | no (consent before sending code) |
+| `fix list` / `fix show <fix-id>`             | Proposals, their state, patch and validation results                                                                              | no                               |
+| `fix apply <fix-id> [--skip-validation]`     | Creates `.git/ai-review/worktrees/<id>` on a new `ai-review/fix-<id>` branch, applies the patch, runs `fixes.validation.commands` | **yes**                          |
+| `fix stage <fix-id>`                         | `git add` of exactly the fixed file in the fix worktree                                                                           | **yes**                          |
+| `fix commit <fix-id> [--message]`            | Commits on the fix branch (message shown and bound; hooks disabled)                                                               | **yes**                          |
+| `fix push <fix-id> [--remote origin]`        | Pushes exactly the approved commit as the fix branch, never forced                                                                | **yes**                          |
+| `fix open <fix-id> [--target] [--host]`      | Opens a GitLab MR / GitHub PR (token from `GITLAB_TOKEN` / `GITHUB_TOKEN`); never merged                                          | **yes**                          |
+| `fix discard <fix-id>`                       | Removes the fix worktree and local fix branch                                                                                     | no                               |
+| `approvals [--all]`                          | Open requests, or the full history                                                                                                | no                               |
+
+Approving:
+
+- With a terminal, every approval step asks "Approve this operation?". A "no" rejects the request and nothing changes.
+- Without a terminal, the command prints an **approval code** and exits with **4**. Re-run it with
+  `--approve <code>`. The code is derived from the request's binding hash, so it only approves exactly what was shown.
+- There is no blanket `--yes` for approvals.
+- A newer `ai-review review` of a different commit invalidates every open approval.
 
 ## AI provider configuration (environment)
 

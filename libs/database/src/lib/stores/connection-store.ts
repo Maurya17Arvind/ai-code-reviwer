@@ -19,6 +19,12 @@ export class ConnectionStore {
     return { organizationId: org.id, slug: org.slug };
   }
 
+  /** Existing organization by slug (never creates). */
+  async findOrganization(slug: string): Promise<TenantContext | null> {
+    const org = await this.prisma.organization.findFirst({ where: { slug, deletedAt: null }, select: { id: true } });
+    return org ? { organizationId: org.id } : null;
+  }
+
   /**
    * Returns the connection id for (org, provider, name), creating it if needed. The id is known
    * before encryption because it is bound into the ciphertext as associated data.

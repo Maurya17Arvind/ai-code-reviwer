@@ -1,4 +1,4 @@
-import { type AiProviderName } from '@acra/ai-providers-core';
+import { type AiProviderName, type AiReviewer } from '@acra/ai-providers-core';
 import { type ReviewerFactory } from '@acra/ai-providers-factory';
 import { runReview } from '@acra/agent-core';
 import {
@@ -9,7 +9,11 @@ import {
   ReviewConfigError,
   defaultReviewConfig,
 } from '@acra/configuration';
-import { ReviewStore, type TenantContext } from '@acra/database';
+import { ApprovalStore, ReviewStore, type TenantContext } from '@acra/database';
+import { fixBranchName } from '@acra/approvals';
+import { generateFix } from '@acra/fix-engine';
+import { SEVERITY_RANK } from '@acra/review-engine';
+import { type ReviewFinding } from '@acra/shared-types';
 import {
   GitProviderError,
   type HostedGitProvider,
@@ -30,6 +34,7 @@ export type ReviewOutcome =
       readonly sessionId: string;
       readonly findings: number;
       readonly inlineComments: number;
+      readonly fixesProposed: number;
     }
   | { readonly status: 'skipped' | 'superseded' | 'duplicate'; readonly sessionId?: string; readonly reason: string };
 
@@ -60,6 +65,7 @@ export class MergeRequestReviewService {
     @Inject(WORKER_CONFIG) private readonly config: WorkerConfig,
     @Inject(REVIEWER_FACTORY) private readonly createReviewers: ReviewerFactory,
     @Inject(HostedProviderFactory) private readonly providers: HostedProviderFactory,
+    @Inject(ApprovalStore) private readonly approvals: ApprovalStore,
   ) {}
 
   async run(rawJob: unknown): Promise<ReviewOutcome> {
@@ -125,6 +131,10 @@ export class MergeRequestReviewService {
     if (mr.refs.headSha !== job.headSha)
       return this.finish(tenant, sessionId, 'SUPERSEDED', 'a newer commit was pushed');
     await this.store.updateSessionStatus(tenant, sessionId, 'RUNNING', { baseSha: mr.refs.baseSha });
+    // This commit is now the reviewed one: approvals and fixes bound to an older commit are void.
+    const voided = await this.approvals.invalidateForHead(tenant, repositoryId, mr.id, mr.refs.headSha);
+    if (voided.approvals + voided.fixes > 0)
+      this.logger.log({ repositoryId, requestId: mr.id, ...voided }, 'Invalidated approvals/fixes for an older commit');
 
     const config = await this.loadConfig(host, mr);
     if (!config.review.enabled) return this.finish(tenant, sessionId, 'SKIPPED', 'review.enabled is false');
@@ -227,12 +237,119 @@ export class MergeRequestReviewService {
       },
     });
 
+    // Fix proposals are automatic (Module H) but optional and never fail the review.
+    let fixesProposed = 0;
+    if (config.fixes.enabled && report.findings.length > 0) {
+      fixesProposed = await this.proposeFixes(tenant, {
+        sessionId,
+        repositoryId,
+        mr,
+        host,
+        config,
+        reviewers: setup.reviewers,
+        findings: report.findings,
+      }).catch((error: unknown) => {
+        this.logger.warn({ err: error, sessionId }, 'Fix generation failed');
+        return 0;
+      });
+    }
+
     return {
       status: report.status,
       sessionId,
       findings: report.findings.length,
       inlineComments: published.comments.filter((c) => c.kind === 'inline').length,
+      fixesProposed,
     };
+  }
+
+  /**
+   * Generates fix proposals for the most severe findings. Nothing is written to the repository:
+   * proposals are stored for a human to approve (admin CLI now, dashboard in Phase 7).
+   */
+  private async proposeFixes(
+    tenant: TenantContext,
+    input: {
+      sessionId: string;
+      repositoryId: string;
+      mr: ReviewRequest;
+      host: HostedGitProvider;
+      config: ReviewConfig;
+      reviewers: readonly AiReviewer[];
+      findings: readonly ReviewFinding[];
+    },
+  ): Promise<number> {
+    const order: AiProviderName[] = ['claude', 'gpt', 'ollama'];
+    const reviewer = order.map((p) => input.reviewers.find((r) => r.provider === p)).find((r) => r !== undefined);
+    if (!reviewer) return 0;
+    const threshold = SEVERITY_RANK[input.config.fixes.minimumSeverity];
+    const candidates = [...input.findings]
+      .filter((f) => SEVERITY_RANK[f.severity] >= threshold)
+      .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || b.confidence - a.confidence)
+      .slice(0, input.config.fixes.maxPerReview);
+
+    let proposed = 0;
+    for (const finding of candidates) {
+      const file = await input.host.readFile(finding.filePath, { kind: 'commit', sha: input.mr.refs.headSha });
+      if (!file || file.isBinary || file.tooLarge) continue;
+      const result = await generateFix({
+        reviewer,
+        target: {
+          id: finding.id,
+          fingerprint: finding.fingerprint,
+          filePath: finding.filePath,
+          ...(finding.lineNumber !== undefined ? { lineNumber: finding.lineNumber } : {}),
+          ...(finding.endLineNumber !== undefined ? { endLineNumber: finding.endLineNumber } : {}),
+          severity: finding.severity,
+          category: finding.category,
+          title: finding.title,
+          description: finding.description,
+          evidence: finding.evidence,
+          ...(finding.suggestion ? { suggestion: finding.suggestion } : {}),
+        },
+        content: file.content,
+        baseSha: input.mr.refs.headSha,
+        signal: AbortSignal.timeout(this.config.AI_REVIEW_TIMEOUT_MS),
+      });
+      if (result.status === 'rejected') {
+        this.logger.log({ findingId: finding.id, code: result.code }, 'No fix proposed');
+        continue;
+      }
+      const findingId = await this.approvals.findingId(tenant, input.repositoryId, input.mr.id, finding.fingerprint);
+      if (!findingId) continue;
+      const p = result.proposal;
+      await this.approvals.saveProposedFix(tenant, {
+        id: p.id,
+        repositoryId: input.repositoryId,
+        reviewSessionId: input.sessionId,
+        findingId,
+        requestId: input.mr.id,
+        fingerprint: p.fingerprint,
+        filePath: p.filePath,
+        baseSha: p.baseSha,
+        targetBranch: input.mr.sourceBranch,
+        explanation: p.explanation,
+        changes: p.changes,
+        patch: p.patch,
+        patchSha256: p.patchSha256,
+        originalSha256: p.originalSha256,
+        resultSha256: p.resultSha256,
+        additions: p.additions,
+        deletions: p.deletions,
+        provider: p.provider,
+        model: p.model,
+        costUsd: p.costUsd,
+        branch: fixBranchName(p.id),
+      });
+      await this.store.audit(tenant.organizationId, {
+        action: 'fix.proposed',
+        targetType: 'proposed_fix',
+        targetId: p.id,
+        metadata: { sessionId: input.sessionId, findingId, filePath: p.filePath, provider: p.provider },
+      });
+      proposed++;
+    }
+    return proposed;
   }
 
   /** Reads ai-review.yaml at the reviewed commit. Untrusted: a broken file fails permanently. */

@@ -57,6 +57,14 @@ export class GitHubClient {
     return (await this.json('PATCH', this.url(path), body)) as T;
   }
 
+  async put<T>(path: string, body: unknown): Promise<T> {
+    return (await this.json('PUT', this.url(path), body)) as T;
+  }
+
+  async delete(path: string): Promise<void> {
+    await this.json('DELETE', this.url(path));
+  }
+
   async paginate<T>(
     path: string,
     query: Record<string, string | number> = {},

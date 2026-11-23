@@ -42,6 +42,44 @@ describe('GitLabProvider (against a fake GitLab HTTP server)', () => {
 
   afterEach(() => gitlab.stop());
 
+  it('writes an approved fix as one commit on a new fix branch and opens an MR (never merged)', async () => {
+    const branch = 'ai-review/fix-0123456789ab';
+    expect(await provider.branchHead(branch)).toBeNull();
+    const { commitSha } = await provider.commitFileToNewBranch({
+      branch,
+      baseSha: HEAD,
+      path: 'src/cart.ts',
+      content: 'fixed\n',
+      message: 'fix: totals',
+    });
+    expect(gitlab.state.commits[0]).toMatchObject({ id: commitSha, branch, startSha: HEAD, content: 'fixed\n' });
+    expect(await provider.branchHead(branch)).toBe(commitSha);
+    await expect(
+      provider.commitFileToNewBranch({ branch, baseSha: HEAD, path: 'src/cart.ts', content: 'x', message: 'm' }),
+    ).rejects.toThrow(/already exists/);
+    await expect(
+      provider.commitFileToNewBranch({
+        branch: 'main',
+        baseSha: HEAD,
+        path: 'src/cart.ts',
+        content: 'x',
+        message: 'm',
+      }),
+    ).rejects.toThrow(/fix-\*/);
+
+    const mr = await provider.createReviewRequest({
+      sourceBranch: branch,
+      targetBranch: 'main',
+      title: 'Fix totals',
+      description: 'body',
+    });
+    expect(mr.webUrl).toContain('/merge_requests/');
+    expect(gitlab.state.createdMergeRequests).toEqual([
+      { iid: mr.id, source: branch, target: 'main', title: 'Fix totals', description: 'body' },
+    ]);
+    expect(gitlab.state.requests.some((r) => /\/merge$/.test(r.path))).toBe(false);
+  });
+
   it('reads the merge request with its diff refs', async () => {
     const mr = await provider.getReviewRequest(7);
     expect(mr).toMatchObject({

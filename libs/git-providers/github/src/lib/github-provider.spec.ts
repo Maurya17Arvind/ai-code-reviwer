@@ -1,7 +1,7 @@
 import { InlinePositionRejectedError } from '@acra/git-providers-core';
 import { FakeGitHub, type FakeGhRepo } from '@acra/testing';
 import { generateKeyPairSync } from 'node:crypto';
-import { createAppJwt, GitHubAppAuth } from './github-app-auth';
+import { createAppJwt, GitHubAppAuth, WRITE_TOKEN_PERMISSIONS } from './github-app-auth';
 import { GitHubApiError } from './github-client';
 import { GitHubProvider, toChangedFile } from './github-provider';
 
@@ -47,6 +47,35 @@ describe('GitHub App adapter (against a fake GitHub server)', () => {
   });
 
   afterEach(() => github.stop());
+
+  it('writes an approved fix only with a write-scoped token, then opens a PR (never merged)', async () => {
+    const branch = 'ai-review/fix-0123456789ab';
+    const input = { branch, baseSha: HEAD, path: 'src/cart.ts', content: 'fixed\n', message: 'fix: totals' };
+    // The review token (contents:read) cannot write.
+    await expect(provider.commitFileToNewBranch(input)).rejects.toThrow(/403/);
+
+    const writer = new GitHubProvider(auth.installationClient(77, [repo.id], WRITE_TOKEN_PERMISSIONS), 'acme/shop', {
+      botLogin: 'acra-review[bot]',
+    });
+    expect(await writer.branchHead(branch)).toBeNull();
+    const { commitSha } = await writer.commitFileToNewBranch(input);
+    expect(repo.commits[0]).toMatchObject({ sha: commitSha, branch, content: 'fixed\n' });
+    expect(await writer.branchHead(branch)).toBe(commitSha);
+    await expect(writer.commitFileToNewBranch(input)).rejects.toThrow(/422/);
+    expect([...github.tokens.values()].some((t) => (t.permissions as { contents: string }).contents === 'write')).toBe(
+      true,
+    );
+
+    const pr = await writer.createReviewRequest({
+      sourceBranch: branch,
+      targetBranch: 'main',
+      title: 'Fix',
+      description: 'b',
+    });
+    expect(pr.webUrl).toContain(`/pull/${pr.id}`);
+    expect(repo.createdPulls).toEqual([{ number: pr.id, head: branch, base: 'main', title: 'Fix', body: 'b' }]);
+    expect(github.requests.some((r) => /\/merge$/.test(r.path))).toBe(false);
+  });
 
   it('authenticates as the app (RS256 JWT) and requests repository-scoped, least-privilege tokens', async () => {
     expect(await auth.botLogin()).toBe('acra-review[bot]');

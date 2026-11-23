@@ -46,6 +46,30 @@ export const ContextLimitsSchema = z.strictObject({
 });
 export type ContextLimits = z.infer<typeof ContextLimitsSchema>;
 
+/**
+ * A validation command as written in the file. Only a syntax pre-check here; the full allowlist
+ * (`@acra/sandbox` command policy) is applied before a command is shown for approval.
+ */
+const ValidationCommandSchema = z
+  .string()
+  .min(1)
+  .max(300)
+  .regex(/^[A-Za-z0-9@%+:,./_= -]+$/, 'may contain only letters, digits, spaces and @%+:,./_=- (no shell syntax)');
+
+export const FixesSchema = z.strictObject({
+  /** Hosted reviews: generate proposals automatically after a review (uses AI credits). */
+  enabled: z.boolean().default(false),
+  /** Upper bound of proposals generated per review. */
+  maxPerReview: z.int().min(1).max(10).default(3),
+  /** Only findings at or above this severity get a proposal automatically. */
+  minimumSeverity: Severity.default('high'),
+  /** Local CLI only: commands run in the fix worktree after an approved apply. */
+  validation: z
+    .strictObject({ commands: z.array(ValidationCommandSchema).max(5).default([]) })
+    .default({ commands: [] }),
+});
+export type FixesConfig = z.infer<typeof FixesSchema>;
+
 export const ReviewConfigSchema = z.strictObject({
   version: z.literal(1, { error: 'unsupported version — expected 1' }),
   project: z
@@ -82,6 +106,11 @@ export const ReviewConfigSchema = z.strictObject({
       approval: ApprovalSchema.default(ApprovalSchema.parse({})),
     })
     .default(() => ReviewSectionDefaults()),
+  /**
+   * Fix proposals (Module G). Generating a proposal is automatic; applying, committing, pushing and
+   * opening an MR/PR always need a human approval (the `approval` section cannot change that).
+   */
+  fixes: FixesSchema.default(FixesSchema.parse({})),
 });
 export type ReviewConfig = z.infer<typeof ReviewConfigSchema>;
 

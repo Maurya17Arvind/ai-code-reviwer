@@ -3,6 +3,10 @@ import { type DynamicModule, Injectable, Module } from '@nestjs/common';
 import { type Queue } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import {
+  ApprovalJobName,
+  approvalJobId,
+  type ExecuteApprovalJob,
+  ExecuteApprovalJobSchema,
   type HeartbeatJob,
   HeartbeatJobSchema,
   QueueName,
@@ -57,6 +61,27 @@ export class ReviewQueueProducer {
   }
 }
 
+/**
+ * Enqueues execution of an approved operation. No automatic retries: a failed write is recorded as
+ * FAILED and needs a new approval, so an operation can never run twice.
+ */
+@Injectable()
+export class ApprovalQueueProducer {
+  constructor(@InjectQueue(QueueName.Approvals) private readonly queue: Queue) {}
+
+  async enqueueExecution(input: ExecuteApprovalJob): Promise<{ jobId: string }> {
+    return enqueueApprovalExecution(this.queue, input);
+  }
+}
+
+/** Shared with the admin CLI, which talks to BullMQ without Nest. */
+export async function enqueueApprovalExecution(queue: Queue, input: ExecuteApprovalJob): Promise<{ jobId: string }> {
+  const payload = ExecuteApprovalJobSchema.parse(input);
+  const jobId = approvalJobId(payload.approvalId);
+  await queue.add(ApprovalJobName.Execute, payload, { jobId, attempts: 1 });
+  return { jobId };
+}
+
 /** Redis connectivity probe used by readiness checks. */
 @Injectable()
 export class QueueHealth {
@@ -92,10 +117,14 @@ export class QueueModule {
           connection: createRedisConnectionOptions(options.redisUrl, options.role),
           defaultJobOptions: DEFAULT_JOB_OPTIONS,
         }),
-        BullModule.registerQueue({ name: QueueName.System }, { name: QueueName.Reviews }),
+        BullModule.registerQueue(
+          { name: QueueName.System },
+          { name: QueueName.Reviews },
+          { name: QueueName.Approvals },
+        ),
       ],
-      providers: [SystemQueueProducer, ReviewQueueProducer, QueueHealth],
-      exports: [BullModule, SystemQueueProducer, ReviewQueueProducer, QueueHealth],
+      providers: [SystemQueueProducer, ReviewQueueProducer, ApprovalQueueProducer, QueueHealth],
+      exports: [BullModule, SystemQueueProducer, ReviewQueueProducer, ApprovalQueueProducer, QueueHealth],
     };
   }
 }

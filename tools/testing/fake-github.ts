@@ -1,4 +1,4 @@
-import { createVerify, generateKeyPairSync, type KeyObject, randomBytes } from 'node:crypto';
+import { createHash, createVerify, generateKeyPairSync, type KeyObject, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
 
@@ -46,6 +46,10 @@ export interface FakeGhRepo {
   files: Map<string, string>;
   threads: FakeGhThread[];
   issueComments: Array<{ id: number; body: string; login: string }>;
+  /** Branches created through the API: name → commit sha. */
+  branches: Map<string, string>;
+  commits: Array<{ sha: string; branch: string; message: string; path: string; content: string }>;
+  createdPulls: Array<{ number: number; head: string; base: string; title: string; body: string }>;
 }
 
 export class FakeGitHub {
@@ -96,6 +100,9 @@ export class FakeGitHub {
       files: new Map(),
       threads: [],
       issueComments: [],
+      branches: new Map(),
+      commits: [],
+      createdPulls: [],
     };
     this.repos.set(fullName, repo);
     return repo;
@@ -128,7 +135,7 @@ export class FakeGitHub {
       return send(res, 429, { message: 'rate limited' });
     }
     const bearer = /^Bearer (.+)$/.exec(req.headers['authorization'] ?? '')?.[1] ?? '';
-    const body = method === 'POST' || method === 'PATCH' ? await readJson(req) : {};
+    const body = method === 'POST' || method === 'PATCH' || method === 'PUT' ? await readJson(req) : {};
     const p = url.pathname;
     let m: RegExpExecArray | null;
 
@@ -177,6 +184,63 @@ export class FakeGitHub {
     if (!repo || !canAccess(repo)) return send(res, 404, { message: 'Not Found' });
     const rest = m[3] ?? '';
 
+    if ((m = /^\/contents\/(.+)$/.exec(rest)) && method === 'GET' && !(req.headers['accept'] ?? '').includes('raw')) {
+      const path = decodeURIComponent(m[1] ?? '');
+      const content = repo.files.get(`${url.searchParams.get('ref')}:${path}`);
+      if (content === undefined) return send(res, 404, { message: 'Not Found' });
+      return send(res, 200, { type: 'file', path, sha: createHash('sha1').update(`blob:${content}`).digest('hex') });
+    }
+    if ((m = /^\/contents\/(.+)$/.exec(rest)) && method === 'PUT') {
+      if (grant.permissions && (grant.permissions as Record<string, string>)['contents'] !== 'write')
+        return send(res, 403, { message: 'Resource not accessible by integration' });
+      const path = decodeURIComponent(m[1] ?? '');
+      const branch = String(body['branch']);
+      const base = repo.branches.get(branch);
+      if (!base) return send(res, 404, { message: 'Branch not found' });
+      const current = repo.files.get(`${base}:${path}`);
+      if (current === undefined || createHash('sha1').update(`blob:${current}`).digest('hex') !== body['sha'])
+        return send(res, 409, { message: 'sha does not match' });
+      const content = Buffer.from(String(body['content']), 'base64').toString('utf8');
+      const sha = createHash('sha1').update(`${branch}:${this.nextId++}`).digest('hex');
+      repo.files.set(`${sha}:${path}`, content);
+      repo.branches.set(branch, sha);
+      repo.commits.push({ sha, branch, message: String(body['message']), path, content });
+      return send(res, 200, { commit: { sha } });
+    }
+    if (rest === '/git/refs' && method === 'POST') {
+      if (grant.permissions && (grant.permissions as Record<string, string>)['contents'] !== 'write')
+        return send(res, 403, { message: 'Resource not accessible by integration' });
+      const branch = String(body['ref']).replace(/^refs\/heads\//, '');
+      if (repo.branches.has(branch)) return send(res, 422, { message: 'Reference already exists' });
+      repo.branches.set(branch, String(body['sha']));
+      // the new branch sees the files of its base commit
+      for (const [key, value] of [...repo.files]) {
+        if (key.startsWith(`${String(body['sha'])}:`)) repo.files.set(key, value);
+      }
+      return send(res, 201, { ref: body['ref'], object: { sha: body['sha'] } });
+    }
+    if ((m = /^\/git\/refs\/heads\/(.+)$/.exec(rest)) && method === 'DELETE') {
+      repo.branches.delete(decodeURIComponent(m[1] ?? ''));
+      res.writeHead(204);
+      return void res.end();
+    }
+    if ((m = /^\/git\/ref\/heads\/(.+)$/.exec(rest)) && method === 'GET') {
+      const sha = repo.branches.get(decodeURIComponent(m[1] ?? ''));
+      return sha ? send(res, 200, { object: { sha } }) : send(res, 404, { message: 'Not Found' });
+    }
+    if (rest === '/pulls' && method === 'POST') {
+      const head = String(body['head']);
+      if (!repo.branches.has(head)) return send(res, 422, { message: 'Validation Failed' });
+      const number = this.nextId++;
+      repo.createdPulls.push({
+        number,
+        head,
+        base: String(body['base']),
+        title: String(body['title']),
+        body: String(body['body']),
+      });
+      return send(res, 201, { number, html_url: `${repo.html_url}/pull/${number}` });
+    }
     if ((m = /^\/contents\/(.+)$/.exec(rest)) && method === 'GET') {
       const content = repo.files.get(`${url.searchParams.get('ref')}:${decodeURIComponent(m[1] ?? '')}`);
       if (content === undefined) return send(res, 404, { message: 'Not Found' });

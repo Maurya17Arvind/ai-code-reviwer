@@ -10,6 +10,8 @@ export const QueueName = {
   System: 'system',
   /** AI reviews of merge/pull requests (Phase 4+). */
   Reviews: 'reviews',
+  /** Execution of human-approved Git operations (Phase 6). */
+  Approvals: 'approvals',
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -37,6 +39,25 @@ export function reviewJobId(
   job: Pick<ReviewMergeRequestJob, 'provider' | 'repositoryId' | 'requestId' | 'headSha'>,
 ): string {
   return `${job.provider}_${job.repositoryId}_${job.requestId}_${job.headSha}`;
+}
+
+export const ApprovalJobName = {
+  Execute: 'execute-approval',
+} as const;
+
+/**
+ * Payload of approvals:execute-approval. Only ids: the worker re-loads the approval, re-verifies its
+ * binding, expiry, the provider's current head commit and the patch hash before writing anything.
+ */
+export const ExecuteApprovalJobSchema = z.object({
+  organizationId: z.uuid(),
+  approvalId: z.uuid(),
+});
+export type ExecuteApprovalJob = z.infer<typeof ExecuteApprovalJobSchema>;
+
+/** One job per approval (an approval is single use). */
+export function approvalJobId(approvalId: string): string {
+  return `approval_${approvalId}`;
 }
 
 export const SystemJobName = {

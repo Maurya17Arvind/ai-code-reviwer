@@ -4,10 +4,11 @@ A standalone, multi-tenant code review platform. Claude and GPT independently re
 repositories, GitLab merge requests and GitHub pull requests. A deterministic validation layer decides what gets
 published, and every code or Git change requires human approval. Merging is never automated.
 
-> **Status: Phase 5 (GitHub App) complete.** GitLab merge requests and GitHub pull requests are reviewed
-> automatically via webhooks: inline comments, one summary, resolved threads on fixes, full history in PostgreSQL.
-> Local CLI reviews since Phase 3. See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/GITLAB.md](docs/GITLAB.md),
-> [docs/GITHUB.md](docs/GITHUB.md) and [docs/CLI.md](docs/CLI.md).
+> **Status: Phase 6 (approval and fix workflow) complete.** GitLab merge requests and GitHub pull requests are
+> reviewed automatically. AI fix proposals can be applied, committed, pushed and opened as MR/PR, and every step
+> needs a human approval bound to the exact commit, operation and patch. Nothing is ever merged automatically. See
+> [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/APPROVAL_WORKFLOW.md](docs/APPROVAL_WORKFLOW.md),
+> [docs/GITLAB.md](docs/GITLAB.md), [docs/GITHUB.md](docs/GITHUB.md) and [docs/CLI.md](docs/CLI.md).
 
 ## Stack
 
@@ -68,5 +69,5 @@ Full instructions: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 | [API_DESIGN.md](docs/API_DESIGN.md)               | API conventions and endpoints                                   |
 | [SECURITY.md](docs/SECURITY.md)                   | Trust boundaries, implemented and planned controls              |
 | [REVIEW_WORKFLOW.md](docs/REVIEW_WORKFLOW.md)     | Review pipeline (Phase 3)                                       |
-| [APPROVAL_WORKFLOW.md](docs/APPROVAL_WORKFLOW.md) | Human approval model (Phase 6)                                  |
+| [APPROVAL_WORKFLOW.md](docs/APPROVAL_WORKFLOW.md) | Fix proposals and the human approval workflow                   |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md)               | Deployment (Phase 8)                                            |

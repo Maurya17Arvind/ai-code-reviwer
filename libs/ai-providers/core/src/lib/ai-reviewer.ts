@@ -12,6 +12,18 @@ export interface ReviewPrompt {
   readonly user: string;
   /** SHA-256 of system + user — proves both models received byte-identical input. */
   readonly promptHash: string;
+  /**
+   * Structured-output contract for this call. Defaults to the review schema
+   * (ModelReviewOutputSchema); fix generation passes its own. Output is re-validated locally either way.
+   */
+  readonly output?: StructuredOutputSpec;
+}
+
+/** JSON Schema handed to the provider's constrained decoding (see toProviderJsonSchema). */
+export interface StructuredOutputSpec {
+  /** Short identifier, [a-z_]+ (OpenAI requires a name). */
+  readonly name: string;
+  readonly schema: Record<string, unknown>;
 }
 
 export interface TokenUsage {

@@ -1,6 +1,11 @@
 import { type GitHubAppSettings, resolveGitHubAppSettings } from '@acra/configuration';
-import { type HostedGitProvider } from '@acra/git-providers-core';
-import { GitHubAppAuth, GitHubProvider } from '@acra/git-providers-github';
+import { type HostedGitProvider, type RepositoryWriter } from '@acra/git-providers-core';
+import {
+  GitHubAppAuth,
+  GitHubProvider,
+  REVIEW_TOKEN_PERMISSIONS,
+  WRITE_TOKEN_PERMISSIONS,
+} from '@acra/git-providers-github';
 import { gitLabProviderFromConnection } from '@acra/git-providers-gitlab';
 import { parseMasterKey } from '@acra/security';
 import { Inject, Injectable } from '@nestjs/common';
@@ -46,16 +51,29 @@ export class HostedProviderFactory {
     this.gitHubSettings = resolveGitHubAppSettings(config);
   }
 
+  /** Read + comment access for reviews (GitHub: contents:read token). */
   async forRepository(repository: ReviewRepository): Promise<HostedGitProvider> {
+    return this.build(repository, 'review');
+  }
+
+  /**
+   * Write access for executing an approved operation (GitHub: contents:write token, scoped to this
+   * repository). Only the approval executor calls this, after verifying the approval.
+   */
+  async writerForRepository(repository: ReviewRepository): Promise<HostedGitProvider & RepositoryWriter> {
+    return this.build(repository, 'write');
+  }
+
+  private async build(repository: ReviewRepository, access: 'review' | 'write') {
     if (repository.connection.provider !== repository.provider) {
       throw new ProviderConfigurationError('connection_mismatch', 'Repository and connection providers differ');
     }
     if (repository.provider === 'GITLAB') return this.gitLab(repository);
-    if (repository.provider === 'GITHUB') return this.gitHub(repository);
+    if (repository.provider === 'GITHUB') return this.gitHub(repository, access);
     throw new ProviderConfigurationError('unsupported_provider', 'Repository provider is not a hosted provider');
   }
 
-  private gitLab(repository: ReviewRepository): HostedGitProvider {
+  private gitLab(repository: ReviewRepository) {
     const projectId = Number(repository.externalId);
     if (!Number.isInteger(projectId) || projectId <= 0) {
       throw new ProviderConfigurationError('invalid_project', 'Repository has no GitLab project id');
@@ -72,7 +90,7 @@ export class HostedProviderFactory {
     });
   }
 
-  private async gitHub(repository: ReviewRepository): Promise<HostedGitProvider> {
+  private async gitHub(repository: ReviewRepository, access: 'review' | 'write') {
     const installationId = Number(repository.connection.installationId);
     const repositoryId = Number(repository.externalId);
     if (!Number.isSafeInteger(installationId) || installationId <= 0) {
@@ -82,9 +100,14 @@ export class HostedProviderFactory {
       throw new ProviderConfigurationError('invalid_project', 'Repository has no GitHub repository id');
     }
     const app = this.app();
-    return new GitHubProvider(app.auth.installationClient(installationId, [repositoryId]), repository.fullName, {
-      botLogin: await app.botLogin,
-    });
+    const permissions = access === 'write' ? WRITE_TOKEN_PERMISSIONS : REVIEW_TOKEN_PERMISSIONS;
+    return new GitHubProvider(
+      app.auth.installationClient(installationId, [repositoryId], permissions),
+      repository.fullName,
+      {
+        botLogin: await app.botLogin,
+      },
+    );
   }
 
   private app(): { auth: GitHubAppAuth; botLogin: Promise<string> } {

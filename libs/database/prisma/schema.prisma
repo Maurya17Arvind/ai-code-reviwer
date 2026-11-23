@@ -61,6 +61,8 @@ model Organization {
   connections  ProviderConnection[]
   sessions     ReviewSession[]
   findings     ReviewFinding[]
+  fixes        ProposedFix[]
+  approvals    ApprovalRequest[]
 
   @@map("organizations")
 }
@@ -74,8 +76,10 @@ model User {
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  memberships OrganizationMember[]
-  auditLogs   AuditLog[]
+  memberships       OrganizationMember[]
+  auditLogs         AuditLog[]
+  requestedApproval ApprovalRequest[]    @relation("ApprovalRequestedBy")
+  decidedApproval   ApprovalRequest[]    @relation("ApprovalDecidedBy")
 
   @@map("users")
 }
@@ -242,10 +246,12 @@ model ReviewSession {
   startedAt      DateTime?           @map("started_at") @db.Timestamptz(3)
   finishedAt     DateTime?           @map("finished_at") @db.Timestamptz(3)
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  repository   Repository        @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
   executions   ModelExecution[]
   comments     ReviewComment[]
+  fixes        ProposedFix[]
+  approvals    ApprovalRequest[]
 
   @@index([repositoryId, requestId, createdAt(sort: Desc)])
   @@index([organizationId, createdAt(sort: Desc)])
@@ -305,6 +311,7 @@ model ReviewFinding {
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   repository   Repository      @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
   comments     ReviewComment[]
+  fixes        ProposedFix[]
 
   @@unique([repositoryId, requestId, fingerprint])
   @@index([organizationId, status])
@@ -343,4 +350,132 @@ model WebhookDelivery {
   @@unique([provider, deliveryId])
   @@index([repositoryId, receivedAt(sort: Desc)])
   @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: fix proposals and approval requests (Modules G and H)
+// ---------------------------------------------------------------------------
+
+enum ProposedFixStatus {
+  /// Generated and validated; nothing written anywhere.
+  PROPOSED
+  /// Approved fix committed to its own branch on the provider.
+  APPLIED
+  /// MR/PR opened for the fix branch (never merged by the platform).
+  OPENED
+  /// A newer commit was reviewed; the fix no longer applies to the reviewed code.
+  SUPERSEDED
+  REJECTED
+
+  @@map("proposed_fix_status")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  INVALIDATED
+  EXECUTING
+  EXECUTED
+  FAILED
+
+  @@map("approval_status")
+}
+
+/// No MERGE value exists: merging is not implemented (Module H).
+enum ApprovalOperationKind {
+  APPLY_FIX
+  STAGE_CHANGES
+  COMMIT_CHANGES
+  PUSH_BRANCH
+  COMMIT_AND_PUSH_FIX
+  CREATE_MERGE_REQUEST
+  CREATE_PULL_REQUEST
+
+  @@map("approval_operation_kind")
+}
+
+/// A validated AI fix for one finding at one reviewed commit. The patch is computed by the platform.
+model ProposedFix {
+  id               String            @id @db.Uuid
+  organizationId   String            @map("organization_id") @db.Uuid
+  repositoryId     String            @map("repository_id") @db.Uuid
+  reviewSessionId  String            @map("review_session_id") @db.Uuid
+  findingId        String            @map("finding_id") @db.Uuid
+  requestId        Int               @map("request_id")
+  fingerprint      String            @db.VarChar(64)
+  filePath         String            @map("file_path") @db.VarChar(1000)
+  /// Reviewed head commit the fix is computed against.
+  baseSha          String            @map("base_sha") @db.VarChar(64)
+  /// MR/PR source branch at proposal time: the fix MR/PR targets it.
+  targetBranch     String            @map("target_branch") @db.VarChar(255)
+  /// Model-written explanation (untrusted text).
+  explanation      String
+  /// Line changes the patch and result are recomputed from.
+  changes          Json
+  patch            String
+  patchSha256      String            @map("patch_sha256") @db.Char(64)
+  originalSha256   String            @map("original_sha256") @db.Char(64)
+  resultSha256     String            @map("result_sha256") @db.Char(64)
+  additions        Int
+  deletions        Int
+  provider         String            @db.VarChar(20)
+  model            String            @db.VarChar(100)
+  costMicros       BigInt?           @map("cost_micros")
+  status           ProposedFixStatus @default(PROPOSED)
+  branch           String            @db.VarChar(255)
+  commitSha        String?           @map("commit_sha") @db.VarChar(64)
+  reviewRequestUrl String?           @map("review_request_url") @db.VarChar(2048)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session      ReviewSession     @relation(fields: [reviewSessionId], references: [id], onDelete: Restrict)
+  finding      ReviewFinding     @relation(fields: [findingId], references: [id], onDelete: Restrict)
+  approvals    ApprovalRequest[]
+
+  @@index([repositoryId, requestId, status])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("proposed_fixes")
+}
+
+/// A human approval for exactly one operation, bound by `binding_hash` (see @acra/approvals).
+model ApprovalRequest {
+  id              String                @id @db.Uuid
+  organizationId  String                @map("organization_id") @db.Uuid
+  repositoryId    String                @map("repository_id") @db.Uuid
+  reviewSessionId String                @map("review_session_id") @db.Uuid
+  proposedFixId   String?               @map("proposed_fix_id") @db.Uuid
+  requestId       Int                   @map("request_id")
+  headSha         String                @map("head_sha") @db.VarChar(64)
+  operationKind   ApprovalOperationKind @map("operation_kind")
+  /// The exact operation (branch, message, title, target, commit) that was shown and approved.
+  operation       Json
+  patchSha256     String?               @map("patch_sha256") @db.Char(64)
+  bindingHash     String                @map("binding_hash") @db.Char(64)
+  status          ApprovalStatus        @default(PENDING)
+  requestedById   String                @map("requested_by_id") @db.Uuid
+  /// Actor snapshot included in the binding hash.
+  requestedBy     Json                  @map("requested_by")
+  decidedById     String?               @map("decided_by_id") @db.Uuid
+  decidedBy       Json?                 @map("decided_by")
+  decidedAt       DateTime?             @map("decided_at") @db.Timestamptz(3)
+  reason          String?               @db.VarChar(500)
+  expiresAt       DateTime              @map("expires_at") @db.Timestamptz(3)
+  executedAt      DateTime?             @map("executed_at") @db.Timestamptz(3)
+  result          Json?
+  createdAt       DateTime              @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session      ReviewSession @relation(fields: [reviewSessionId], references: [id], onDelete: Restrict)
+  fix          ProposedFix?  @relation(fields: [proposedFixId], references: [id], onDelete: Restrict)
+  requester    User          @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  decider      User?         @relation("ApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, expiresAt])
+  @@index([repositoryId, requestId, status])
+  @@index([proposedFixId])
+  @@map("approval_requests")
 }

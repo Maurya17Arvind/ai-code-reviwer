@@ -63,8 +63,9 @@ libs/
 ├── review-engine/        ✅ Phase 3 — secrets, static analyzers, prompt builder, aggregator, validators, dedup, lifecycle, report
 ├── ai-providers/{core,claude,openai}        ✅ Phase 3 — AiReviewer port + shared output schema; Claude & GPT adapters
 ├── publishing/           ✅ Phase 4 — publication planner, safe comment rendering, executor
-├── approvals/            ⏳ Phase 6
-└── fix-engine/           ⏳ Phase 6
+├── approvals/            ✅ Phase 6 — approval binding hash, state machine, role policy, operations (no merge)
+├── fix-engine/           ✅ Phase 6 — fix prompt + schema, deterministic validation, unified diff, protected paths
+└── sandbox/              ✅ Phase 6 — allowlisted validation commands (argv, scrubbed env, time/output limits)
 
 tools/testing/            ✅ `@acra/testing` — integration-test config + TempGitRepo (test-only)
 ```
@@ -127,12 +128,12 @@ the dashboard or the CLI is a lint error.
 
 The brief's single `GitProvider` interface is split into capability ports in `@acra/git-providers-core` (ADR-019):
 
-| Port                                      | Capability                                                                 | Implemented by                       |
-| ----------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
-| `FileContentReader`                       | `readFile(path, revision)`. The narrow port that domain services depend on | Local ✅, GitLab/GitHub (Phases 4–5) |
-| `RepositoryReader`                        | + `getRepositoryInfo()`, `getChangeSet(scope)`, `getCommitDetails(ref)`    | Local ✅, GitLab/GitHub (Phases 4–5) |
-| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab ✅, GitHub ✅                 |
-| `RepositoryWriter`                        | Branch, push, create MR/PR. **Approval-gated**                             | Phase 6                              |
+| Port                                      | Capability                                                                        | Implemented by                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------ |
+| `FileContentReader`                       | `readFile(path, revision)`. The narrow port that domain services depend on        | Local ✅, GitLab/GitHub (Phases 4–5) |
+| `RepositoryReader`                        | + `getRepositoryInfo()`, `getChangeSet(scope)`, `getCommitDetails(ref)`           | Local ✅, GitLab/GitHub (Phases 4–5) |
+| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing                   | GitLab ✅, GitHub ✅                 |
+| `RepositoryWriter`                        | Fix branch + commit, create MR/PR. **Approval-gated**; local: `LocalFixWorkspace` | GitLab ✅, GitHub ✅, Local ✅       |
 
 The provider-neutral diff model (`ChangedFile → DiffHunk → DiffLine` with old/new line numbers) is produced by
 the parser in `@acra/repository-context` from local `git diff` output, and later from GitLab/GitHub diffs (`parseHunks`).

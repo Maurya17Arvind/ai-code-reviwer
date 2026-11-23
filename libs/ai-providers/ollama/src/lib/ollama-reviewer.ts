@@ -66,7 +66,7 @@ export class OllamaReviewer implements AiReviewer {
         body: JSON.stringify({
           model: this.model,
           stream: false,
-          format: modelReviewOutputJsonSchema(),
+          format: prompt.output?.schema ?? modelReviewOutputJsonSchema(),
           options: { temperature: 0, num_ctx: this.numCtx },
           messages: [
             { role: 'system', content: prompt.system },

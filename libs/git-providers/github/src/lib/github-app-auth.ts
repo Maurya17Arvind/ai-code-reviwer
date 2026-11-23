@@ -14,6 +14,14 @@ export interface GitHubAppCredentials {
 /** Least privilege for review: read code and metadata, write PR review comments (PR + issue comments). */
 export const REVIEW_TOKEN_PERMISSIONS = { contents: 'read', metadata: 'read', pull_requests: 'write' } as const;
 
+/**
+ * Permissions for executing an approved fix (Phase 6): create the fix branch/commit and open the PR.
+ * Requested only by the approval executor, never by review jobs.
+ */
+export const WRITE_TOKEN_PERMISSIONS = { contents: 'write', metadata: 'read', pull_requests: 'write' } as const;
+
+export type TokenPermissions = typeof REVIEW_TOKEN_PERMISSIONS | typeof WRITE_TOKEN_PERMISSIONS;
+
 const base64url = (input: Buffer | string) => Buffer.from(input).toString('base64url');
 
 /** RS256 JWT for GitHub App authentication (valid 9 minutes, backdated 60 s for clock skew). */
@@ -60,21 +68,29 @@ export class GitHubAppAuth {
   }
 
   /** Installation token, optionally restricted to specific repositories. */
-  async installationToken(installationId: number, repositoryIds?: readonly number[]): Promise<string> {
-    const cacheKey = `${installationId}:${repositoryIds?.join(',') ?? '*'}`;
+  async installationToken(
+    installationId: number,
+    repositoryIds?: readonly number[],
+    permissions: TokenPermissions = REVIEW_TOKEN_PERMISSIONS,
+  ): Promise<string> {
+    const cacheKey = `${installationId}:${repositoryIds?.join(',') ?? '*'}:${permissions.contents}`;
     const cached = this.tokens.get(cacheKey);
     if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
     const response = await this.appClient.post<{ token: string; expires_at: string }>(
       `/app/installations/${installationId}/access_tokens`,
-      { ...(repositoryIds ? { repository_ids: repositoryIds } : {}), permissions: REVIEW_TOKEN_PERMISSIONS },
+      { ...(repositoryIds ? { repository_ids: repositoryIds } : {}), permissions },
     );
     this.tokens.set(cacheKey, { token: response.token, expiresAt: Date.parse(response.expires_at) });
     return response.token;
   }
 
   /** Client authenticated as the installation (optionally scoped to repositories). */
-  installationClient(installationId: number, repositoryIds?: readonly number[]): GitHubClient {
-    return this.client(() => this.installationToken(installationId, repositoryIds));
+  installationClient(
+    installationId: number,
+    repositoryIds?: readonly number[],
+    permissions: TokenPermissions = REVIEW_TOKEN_PERMISSIONS,
+  ): GitHubClient {
+    return this.client(() => this.installationToken(installationId, repositoryIds, permissions));
   }
 
   private client(token: () => Promise<string>): GitHubClient {

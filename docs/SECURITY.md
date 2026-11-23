@@ -102,6 +102,29 @@ Residual risks (Phase 8):
 | Duplicate markers trusted only on comments by the App's bot login; model text escaped, @mentions neutralised                  | `GitHubProvider.listComments`, `publishing/sanitize.ts`    |
 | Job provider must match the repository's provider                                                                             | `MergeRequestReviewService`                                |
 
+## 2e. Controls implemented in Phase 6 (fixes and approvals)
+
+| Control                                                                                                                                                         | Where                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Every code/Git change needs a human approval of that exact operation; no merge operation exists anywhere                                                        | `@acra/approvals` (ADR-032), DB enum without MERGE         |
+| Approvals bound by SHA-256 over user, org, repository, session, commit, operation, patch hash and expiry; re-verified at approval and execution                 | `computeBindingHash`, `beginExecution`                     |
+| Single use: compare-and-set transitions; execution jobs never retried                                                                                           | `ApprovalStore.transition`, `approvals` queue (attempts 1) |
+| New reviewed commit invalidates open approvals and supersedes unapplied fixes; executor checks the live MR/PR head                                              | `invalidateForHead`, `ApprovalExecutionService`            |
+| Only OWNER/ADMIN/MEMBER humans decide; VIEWERs and system actors cannot; decisions audited with the member id                                                   | state machine, `audit_logs.actor_user_id`                  |
+| Model output never becomes a diff, command, branch name or unescaped text: line edits validated, patch computed, branch generated, titles plain, bodies escaped | `fix-engine` (ADR-031), `fix-text.ts`                      |
+| Protected files (CI, hooks, manifests, lockfiles, Docker/Make, .env, keys, ai-review.yaml) are never fixed automatically                                        | `PROTECTED_PATH_GLOBS`                                     |
+| Secrets redacted before fix prompts; fixes may not touch redacted lines                                                                                         | `generateFix`                                              |
+| Local fixes in an isolated worktree/branch; repository hooks disabled; pushes exact refspec, never forced                                                       | `LocalFixWorkspace` (ADR-033)                              |
+| Validation commands: allowlist, argv without shell, denied redirect flags, scrubbed env, 10-min limit with tree kill, output cap; shown in the approval         | `@acra/sandbox` (ADR-033)                                  |
+| Hosted writes only on `ai-review/fix-*`, never move existing branches; GitHub write tokens only for approved executions, repo-scoped                            | `RepositoryWriter`, `WRITE_TOKEN_PERMISSIONS` (ADR-034)    |
+| No repository code runs on the server                                                                                                                           | worker design                                              |
+
+Residual risks:
+
+- Local validation commands run as the user, without OS-level isolation. They are shown and approved first, and
+  an optional container runner is planned for Phase 8.
+- Server-side decisions go through the operator CLI until the Phase 7 authentication arrives.
+
 ### Development-only relaxations (must not reach production)
 
 - `acra_app` has `CREATEDB` so `prisma migrate dev` can create a shadow database. Production roles: no `CREATEDB`; migrations via `migrate deploy`.
@@ -113,8 +136,7 @@ Residual risks (Phase 8):
 | ------------------------------------------------------------------------------------------------------------ | ----- |
 | SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks) | 4     |
 | Envelope-encrypted credentials (ADR-011)                                                                     | 4     |
-| Approval workflow: SHA-bound, expiring, patch-hash-bound approvals; merge never implemented                  | 6     |
-| Sandboxed fix validation: temp worktree, command allowlist, CPU/memory/time limits, no network               | 6     |
+| OS-level isolation for validation commands (container, no network, CPU/memory limits)                        | 8     |
 | AuthN/AuthZ, rate limiting (`@nestjs/throttler`), CSRF strategy for cookie sessions                          | 7–8   |
 | Dependency scanning, container hardening, RLS evaluation, security audit                                     | 8     |
 

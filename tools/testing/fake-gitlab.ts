@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
 
@@ -58,6 +59,12 @@ export interface FakeGitLabState {
   /** Respond 429 to the next N requests (rate-limit simulation). */
   rateLimitNext: number;
   requests: Array<{ method: string; path: string }>;
+  /** Branches created through the API: name → commit id. */
+  branches: Map<string, string>;
+  /** Commits created through the API. */
+  commits: Array<{ id: string; branch: string; startSha: string; message: string; path: string; content: string }>;
+  /** Merge requests created through the API (never merged). */
+  createdMergeRequests: Array<{ iid: number; source: string; target: string; title: string; description: string }>;
 }
 
 export class FakeGitLab {
@@ -78,6 +85,9 @@ export class FakeGitLab {
       hooks: [],
       rateLimitNext: 0,
       requests: [],
+      branches: new Map(),
+      commits: [],
+      createdMergeRequests: [],
       ...overrides,
     };
   }
@@ -190,6 +200,52 @@ export class FakeGitLab {
         this.state.hooks.push(hook);
         return send(res, 201, { id: hook.id, url: hook.url, merge_requests_events: hook.merge_requests_events });
       }
+    }
+
+    if ((m = /^\/repository\/branches\/(.+)$/.exec(rest)) && method === 'GET') {
+      const commit = this.state.branches.get(decodeURIComponent(m[1] ?? ''));
+      return commit
+        ? send(res, 200, { name: m[1], commit: { id: commit } })
+        : send(res, 404, { message: '404 Branch Not Found' });
+    }
+    if (rest === '/repository/commits' && method === 'POST') {
+      const branch = String(body['branch']);
+      if (this.state.branches.has(branch))
+        return send(res, 400, { message: `A branch called '${branch}' already exists` });
+      const actions = body['actions'] as Array<{ action: string; file_path: string; content: string }>;
+      const action = actions[0];
+      const startSha = String(body['start_sha']);
+      if (!action || action.action !== 'update' || !this.state.files.has(`${startSha}:${action.file_path}`)) {
+        return send(res, 400, { message: 'A file with this name does not exist' });
+      }
+      const id = createHash('sha1').update(`${branch}:${this.nextId++}`).digest('hex');
+      this.state.branches.set(branch, id);
+      this.state.files.set(`${id}:${action.file_path}`, action.content);
+      this.state.commits.push({
+        id,
+        branch,
+        startSha,
+        message: String(body['commit_message']),
+        path: action.file_path,
+        content: action.content,
+      });
+      return send(res, 201, { id });
+    }
+    if (rest === '/merge_requests' && method === 'POST') {
+      const source = String(body['source_branch']);
+      if (!this.state.branches.has(source)) return send(res, 422, { message: 'Source branch does not exist' });
+      const iid = this.nextId++;
+      this.state.createdMergeRequests.push({
+        iid,
+        source,
+        target: String(body['target_branch']),
+        title: String(body['title']),
+        description: String(body['description']),
+      });
+      return send(res, 201, {
+        iid,
+        web_url: `https://gitlab.example/${this.state.pathWithNamespace}/-/merge_requests/${iid}`,
+      });
     }
 
     if (!(m = /^\/merge_requests\/(\d+)(\/.*)?$/.exec(rest))) return send(res, 404, { message: '404 Not Found' });

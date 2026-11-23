@@ -196,6 +196,11 @@ export class LocalGitProvider implements RepositoryReader {
     return dir;
   }
 
+  /** `user.email` from git config (recorded as the approver's identity), or null. */
+  async userEmail(): Promise<string | null> {
+    return emptyToNull(await this.tryRun(['config', '--get', 'user.email']));
+  }
+
   /** Resolves a user-supplied revision to a full commit id. */
   async resolveCommit(ref: string): Promise<string> {
     try {

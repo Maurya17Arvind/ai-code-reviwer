@@ -43,17 +43,22 @@ apps/worker ◄─────────────────────�
 Go to GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**. For an organization app, use the
 organization's settings.
 
-| Field                     | Value                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| Webhook URL               | `https://<public URL of apps/api>/api/webhooks/github`                                      |
-| Webhook secret            | random, at least 20 characters (`openssl rand -hex 32`); becomes `GITHUB_WEBHOOK_SECRET`    |
-| Repository permissions    | **Contents: Read-only**, **Pull requests: Read and write**, Metadata: Read-only (mandatory) |
-| Subscribe to events       | **Pull request** (installation events are always sent)                                      |
-| Where can it be installed | "Only on this account" unless you serve several GitHub organizations                        |
+| Field                     | Value                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| Webhook URL               | `https://<public URL of apps/api>/api/webhooks/github`                                           |
+| Webhook secret            | random, at least 20 characters (`openssl rand -hex 32`); becomes `GITHUB_WEBHOOK_SECRET`         |
+| Repository permissions    | **Contents: Read and write**, **Pull requests: Read and write**, Metadata: Read-only (mandatory) |
+| Subscribe to events       | **Pull request** (installation events are always sent)                                           |
+| Where can it be installed | "Only on this account" unless you serve several GitHub organizations                             |
 
-Do **not** grant Administration, Checks, Actions, Workflows or Contents: write. The review worker
-requests a token with only `contents:read`, `metadata:read` and `pull_requests:write`. GitHub refuses
-to issue more than the App was granted.
+Do **not** grant Administration, Checks, Actions or Workflows. Tokens are narrowed further per job:
+
+- **Review jobs** request only `contents:read`, `metadata:read` and `pull_requests:write`.
+- **Approved fix executions** (Phase 6, see [APPROVAL_WORKFLOW.md](./APPROVAL_WORKFLOW.md)) request
+  `contents:write`, so they can create the `ai-review/fix-*` branch and commit.
+
+Every token is scoped to the single repository. GitHub refuses to issue more than the App was granted. If you
+never want fixes pushed, keep Contents read-only: executions will then fail with 403, and nothing else changes.
 
 After creating the App:
 

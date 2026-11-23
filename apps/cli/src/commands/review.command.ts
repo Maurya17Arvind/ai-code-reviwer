@@ -7,6 +7,7 @@ import { type Command, InvalidArgumentError, Option } from 'commander';
 import { relative } from 'node:path';
 import { CliError, type CliIO, formatBytes, paint } from '../core/cli-context';
 import { type ContextOptions, loadReviewContext } from '../core/review-context';
+import { LocalFixStore } from '../core/fix-store';
 import { LocalReviewStore } from '../core/review-store';
 import { type ReviewerFactory } from '@acra/ai-providers-factory';
 import { renderReportText } from '../core/render-report';
@@ -148,6 +149,8 @@ export function registerReviewCommand(program: Command, io: CliIO, createReviewe
           priorFindings: await store.priorFindings(),
         });
         const savedAt = await store.save(report);
+        // A newly reviewed commit invalidates open approvals bound to the previous one (Module H).
+        await new LocalFixStore(await provider.getGitDirectory()).refreshApprovals(report.repository.headSha);
 
         if (options.format === 'json') io.out(JSON.stringify(report, null, 2));
         else {

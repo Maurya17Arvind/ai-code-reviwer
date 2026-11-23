@@ -61,7 +61,12 @@ export class OpenAiReviewer implements AiReviewer {
           store: false,
           max_output_tokens: this.options.maxOutputTokens ?? 32_000,
           text: {
-            format: { type: 'json_schema', name: 'code_review', schema: modelReviewOutputJsonSchema(), strict: true },
+            format: {
+              type: 'json_schema',
+              name: prompt.output?.name ?? 'code_review',
+              schema: prompt.output?.schema ?? modelReviewOutputJsonSchema(),
+              strict: true,
+            },
           },
           ...(this.options.reasoningEffort ? { reasoning: { effort: this.options.reasoningEffort } } : {}),
         },

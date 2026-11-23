@@ -65,6 +65,16 @@ GitHub repositories use `repositories.external_id` = GitHub repository id; `webh
 (the App has one webhook secret, held by the API environment). Review tables are shared by both providers;
 idempotency keys are prefixed with the provider.
 
+## 2d. Implemented in Phase 6 (`phase6_fixes_approvals`)
+
+| Table               | Key columns                                                                                                                                                                                                                                                                           | Constraints / indexes                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `proposed_fixes`    | `finding_id`, `review_session_id`, `request_id`, `base_sha`, `target_branch`, `explanation`, `changes` jsonb, `patch`, `patch_sha256`, `original_sha256`, `result_sha256`, `status` (PROPOSED/APPLIED/OPENED/SUPERSEDED/REJECTED), `branch`, `commit_sha`, `review_request_url`       | FKs to org/session/finding; CHECK counts + hash format, branch `ai-review/fix-*`; index `(repository_id, request_id, status)`                            |
+| `approval_requests` | `review_session_id`, `proposed_fix_id`, `request_id`, `head_sha`, `operation_kind` (no MERGE value), `operation` jsonb, `patch_sha256`, `binding_hash`, `status`, `requested_by_id`/`requested_by`, `decided_by_id`/`decided_by`, `decided_at`, `expires_at`, `executed_at`, `result` | FKs to users; CHECK patch bound for fix writes, decider for decided states, expiry ≤ 7 days, hash formats; index `(organization_id, status, expires_at)` |
+
+`audit_logs` now records human actions with `actor_type = USER` and `actor_user_id`. `ApprovalStore` applies every
+status change with compare-and-set on the previous status and the binding hash.
+
 ## 3. Target model (added in the phase that uses it)
 
 > Review tables moved from Phase 3 to Phase 4 (ADR-025): in Phase 3 only the local CLI runs reviews, and it stores
@@ -80,8 +90,6 @@ idempotency keys are prefixed with the provider.
 | `review_findings`            | 4     | Fields of the `ReviewFinding` schema + `fingerprint` (indexed with `repository_id`), `status` lifecycle (`NEW/VALIDATED/PUBLISHED/RESOLVED/DISMISSED/FALSE_POSITIVE`), `model_sources`, `first_seen_sha`, `last_seen_sha` |
 | `review_comments`            | 4/5   | Published comment ↔ finding mapping: `provider_comment_id`, `discussion_id`, `kind` (inline/summary), `body_hash` (duplicate suppression)                                                                                 |
 | `review_feedback`            | 4+    | User feedback on findings (helpful / false positive + reason)                                                                                                                                                             |
-| `proposed_fixes`             | 6     | `finding_id`, `patch` (unified diff), `patch_sha256`, `explanation`, `base_sha`, validation results                                                                                                                       |
-| `approval_requests`          | 6     | `organization_id`, `repository_id`, `review_session_id`, `commit_sha`, `operation` (enum), `payload` + `payload_sha256`, `requested_by`, `decided_by`, `status`, `expires_at`; invalidated when head SHA changes          |
 | `background_jobs`            | 4     | Durable record of queued work: `queue`, `job_id`, `idempotency_key` unique, `status`, `attempts`, `last_error_code`                                                                                                       |
 
 Indexes are added with each table based on its query patterns; every list endpoint gets a supporting

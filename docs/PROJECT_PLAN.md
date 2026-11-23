@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 5 complete — awaiting approval for Phase 6.** Last updated: 2026-11-23.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23).
+> Status: **Phase 6 complete — awaiting approval for Phase 7.** Last updated: 2026-11-24.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24).
 
 ## 1. Phase overview
 
@@ -408,3 +408,80 @@ Branch: `feature/phase-5-github` (based on `feature/phase-4-gitlab`).
 - The PR files API is capped at 3,000 files by GitHub; larger PRs are reviewed partially.
 - Manual thread resolution does not yet dismiss findings (Phase 7, with the dashboard).
 - Rate limiting of the webhook endpoint and a pinned-address agent against DNS rebinding remain Phase 8 items.
+
+## 11. Phase 6 results (2026-11-24)
+
+Branch: `feature/phase-6-approval-workflow` (based on `feature/phase-5-github`).
+
+### 11.1 Roadmap items
+
+| Roadmap item                | Delivered                                                                                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generate fix proposals      | `@acra/fix-engine`: one model, one finding, one file; line edits validated deterministically; patch computed by the platform; protected paths; secrets redacted (ADR-031). CLI `fix propose`; worker when `fixes.enabled` |
+| Display proposed patches    | CLI `fix propose/show` (coloured diff + unverified explanation); operator `fixes-show`; dashboard in Phase 7                                                                                                              |
+| Implement approval requests | `@acra/approvals`: binding hash, approval codes, state machine, role policy, no merge (ADR-032); `approval_requests` table; CLI and operator commands                                                                     |
+| Apply approved patches      | Local: exact patch bytes with `git apply` in an isolated worktree on a new branch, result hash verified. Hosted: content recomputed and hash-checked before the provider write                                            |
+| Run tests                   | `@acra/sandbox`: allowlisted validation commands from `ai-review.yaml`, part of the apply approval; results shown and stored (ADR-033)                                                                                    |
+| Stage approved changes      | CLI `fix stage` (exactly the fixed file; worktree state verified before and after approval)                                                                                                                               |
+| Commit with approval        | CLI `fix commit` (bound message and parent; hooks disabled); hosted `commit_and_push_fix`                                                                                                                                 |
+| Push with approval          | CLI `fix push` (exact commit, no force); hosted: new branch at the reviewed commit via provider API (ADR-034)                                                                                                             |
+| Create MR/PR with approval  | CLI `fix open` (user token from env); hosted executor into the reviewed MR/PR's source branch; never merged                                                                                                               |
+
+### 11.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **27 projects**. **338 unit tests** pass, 1 skipped.
+- `pnpm test:integration`: **257 tests** pass across 7 projects, 150 of them randomized `git apply` cases. New in
+  this phase:
+  - **CLI end to end (7):** real git, fake AI and fake GitLab.
+    - propose (consent, nothing changed);
+    - no approval without a terminal (exit 4), and a wrong code is refused;
+    - apply with the code in an isolated worktree, with `npm test` validation;
+    - a "no" changes nothing;
+    - stage → commit → push to a bare remote → open MR (escaped body, never merged);
+    - audit history;
+    - invalidation by a newer reviewed commit.
+  - **Worker (6):** fake GitLab.
+    - automatic proposal after a review;
+    - pending and VIEWER refusals;
+    - a tampered operation is refused;
+    - single-use commit of exactly the approved content;
+    - MR into the reviewed branch;
+    - head-moved invalidation and supersession.
+  - **Admin approval service (4):** PostgreSQL and Redis.
+    - membership checks;
+    - bound request and VIEWER refusal;
+    - approve once and enqueue;
+    - reject;
+    - newer-commit refusal;
+    - the DB CHECK constraint.
+  - **Local fix workspace (4):** real hooks are planted and are proven not to run; exact refspec push; discard.
+  - **Validation runner (5):** real npm. Covers secret scrubbing, exit codes, timeout kill and the output cap.
+  - **Unified diff property test (150):** random edits including CRLF files and files without a final newline;
+    every patch applies byte for byte with `git apply`.
+- Unit tests:
+  - fix engine (16);
+  - approvals state machine (7);
+  - command policy (26);
+  - GitLab and GitHub writers against the fakes (GitHub: a read token cannot write).
+- The built `cli` (`fix --help`) and `admin` (approval commands) bundles run.
+- **Not verified against real GitLab or GitHub, and not with paid AI models.** The flows are verified with fakes
+  and real Git.
+
+### 11.3 Deviations and decisions
+
+| Item                           | Decision                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Patch generation               | Model returns line edits; the platform renders the diff (ADR-031)                                                                       |
+| Hosted apply/stage/commit/push | One approved remote write (`commit_and_push_fix`): there is no working tree on the server (ADR-034)                                     |
+| Fix MR/PR target               | The reviewed MR/PR's source branch, not the default branch                                                                              |
+| Server-side decisions          | Operator CLI with `--user` + approval code until Phase 7 authentication (ADR-032)                                                       |
+| Validation isolation           | Allowlist + scrubbed env + limits, approved by a human; no OS-level sandbox yet (Phase 8). Server runs no repository commands (ADR-033) |
+| GitHub App permissions         | Contents: Read and write; write tokens only for approved executions (ADR-029 update)                                                    |
+| Hosted fix generation          | Opt-in (`fixes.enabled: false` by default) because it spends AI credits                                                                 |
+
+### 11.4 Known limitations / follow-ups
+
+- Fixes are limited to one file and one local region.
+- Approval UI, notifications and API endpoints for fixes and approvals are planned for Phase 7.
+- The hosted summary comment does not yet mention available fix proposals (Phase 7, with the dashboard link).
+- An OS-level sandbox for validation commands is planned for Phase 8.

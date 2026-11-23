@@ -292,13 +292,16 @@ export class ReviewStore {
       targetType: string;
       targetId?: string;
       metadata?: Record<string, unknown>;
-      actorType?: 'SYSTEM' | 'WEBHOOK';
+      actorType?: 'SYSTEM' | 'WEBHOOK' | 'USER';
+      /** Required for USER actions: the member who acted. */
+      actorUserId?: string;
     },
   ): Promise<void> {
     await this.prisma.auditLog.create({
       data: {
         organizationId,
         actorType: entry.actorType ?? 'SYSTEM',
+        actorUserId: entry.actorUserId ?? null,
         action: entry.action,
         targetType: entry.targetType,
         targetId: entry.targetId ?? null,

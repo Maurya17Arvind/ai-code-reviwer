@@ -65,5 +65,33 @@ export interface ReviewPublisher {
   resolveDiscussion(requestId: number, discussionId: string): Promise<void>;
 }
 
+/**
+ * Approval-gated write operations on a hosted repository (Phase 6). Implementations perform exactly
+ * one change each and never force, delete existing branches, approve or merge. Callers must have
+ * verified the human approval for the exact values passed.
+ */
+export interface RepositoryWriter {
+  /**
+   * Creates `branch` at `baseSha` with one commit that replaces `path` with `content`.
+   * Fails if the branch already exists. Returns the new commit id.
+   */
+  commitFileToNewBranch(input: {
+    readonly branch: string;
+    readonly baseSha: string;
+    readonly path: string;
+    readonly content: string;
+    readonly message: string;
+  }): Promise<{ commitSha: string }>;
+  /** Opens a merge/pull request. It is never merged by the platform. */
+  createReviewRequest(input: {
+    readonly sourceBranch: string;
+    readonly targetBranch: string;
+    readonly title: string;
+    readonly description: string;
+  }): Promise<{ id: number; webUrl: string }>;
+  /** Current commit of a branch, or null when it does not exist. */
+  branchHead(branch: string): Promise<string | null>;
+}
+
 /** Everything the review worker needs from a hosted provider for one repository. */
 export type HostedGitProvider = ReviewRequestSource & ReviewPublisher & FileContentReader;

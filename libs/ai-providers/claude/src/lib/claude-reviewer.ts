@@ -71,7 +71,7 @@ export class ClaudeReviewer implements AiReviewer {
           ...(this.refusalFallback ? { betas: [FALLBACK_BETA], fallbacks: 'default' as const } : {}),
           output_config: {
             effort: this.effort,
-            format: { type: 'json_schema', schema: modelReviewOutputJsonSchema() },
+            format: { type: 'json_schema', schema: prompt.output?.schema ?? modelReviewOutputJsonSchema() },
           },
           system: [{ type: 'text', text: prompt.system, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: prompt.user }],

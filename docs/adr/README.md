@@ -35,3 +35,7 @@ A _Proposed_ ADR describes a decision for a future phase; it becomes _Accepted_ 
 | [028](./028-gitlab-webhooks-and-publishing-safety.md)          | GitLab webhook intake and safe publishing                   | Accepted                                                    |
 | [029](./029-github-app-least-privilege.md)                     | GitHub App with per-job, repository-scoped tokens           | Accepted                                                    |
 | [030](./030-github-webhook-intake.md)                          | GitHub webhook intake: one signed URL, installation routing | Accepted                                                    |
+| [031](./031-deterministic-fix-patches.md)                      | Models propose line edits; the platform computes the patch  | Accepted                                                    |
+| [032](./032-bound-single-use-approvals.md)                     | Hash-bound, expiring, single-use approvals                  | Accepted                                                    |
+| [033](./033-isolated-worktree-and-validation-runner.md)        | Isolated fix worktrees and an allowlisted validation runner | Accepted                                                    |
+| [034](./034-hosted-fix-execution.md)                           | Hosted fixes written through provider APIs after approval   | Accepted                                                    |

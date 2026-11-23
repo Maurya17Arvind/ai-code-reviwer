@@ -113,5 +113,17 @@ review:
     createMergeRequest: required
     createPullRequest: required
     merge: disabled
+
+# Fix proposals: generated automatically, applied only after human approval.
+fixes:
+  # Server (GitLab/GitHub): propose fixes automatically after each review (uses AI credits).
+  enabled: false
+  maxPerReview: 3
+  minimumSeverity: high
+  # Local CLI: run after an approved \`ai-review fix apply\`, in the isolated fix worktree.
+  # Allowed: npm|pnpm|yarn test / run <script>, go test|vet|build, cargo test|check|clippy|build,
+  # dotnet test|build, pytest. No shell syntax.
+  validation:
+    commands: []
 `;
 }

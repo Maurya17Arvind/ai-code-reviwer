@@ -8,6 +8,7 @@ import {
   type HostedGitProvider,
   type InlineCommentInput,
   InlinePositionRejectedError,
+  type RepositoryWriter,
   type ReviewRequest,
   type Revision,
 } from '@acra/git-providers-core';
@@ -77,7 +78,7 @@ const RESOLVE_MUTATION = `mutation($threadId: ID!) { resolveReviewThread(input: 
  * positions (`line` + `side`); the summary is a single issue comment updated in place; review threads
  * are resolved through GraphQL (REST cannot resolve threads).
  */
-export class GitHubProvider implements HostedGitProvider {
+export class GitHubProvider implements HostedGitProvider, RepositoryWriter {
   private readonly owner: string;
   private readonly name: string;
 
@@ -234,9 +235,81 @@ export class GitHubProvider implements HostedGitProvider {
     return { noteId: String(created.id) };
   }
 
+  // ---- Approval-gated writes (Phase 6). Need a token with contents:write. ----
+
+  async commitFileToNewBranch(input: {
+    branch: string;
+    baseSha: string;
+    path: string;
+    content: string;
+    message: string;
+  }): Promise<{ commitSha: string }> {
+    assertFixBranch(input.branch);
+    if (!SHA.test(input.baseSha)) throw new GitProviderError('Base must be a full commit id', 'UNSAFE_REF');
+    const path = normalizeRepoRelativePath(input.path);
+    const encoded = path.split('/').map(encodeURIComponent).join('/');
+    const existing = await this.client.get<{ sha: string; type: string }>(`${this.repo}/contents/${encoded}`, {
+      ref: input.baseSha,
+    });
+    if (existing.type !== 'file') throw new GitProviderError(`${path} is not a file`, 'UNSAFE_PATH');
+
+    // Creating the ref fails with 422 when the branch exists: an existing branch is never moved.
+    await this.client.post(`${this.repo}/git/refs`, { ref: `refs/heads/${input.branch}`, sha: input.baseSha });
+    try {
+      const result = await this.client.put<{ commit: { sha: string } }>(`${this.repo}/contents/${encoded}`, {
+        message: input.message,
+        content: Buffer.from(input.content, 'utf8').toString('base64'),
+        sha: existing.sha,
+        branch: input.branch,
+      });
+      if (!SHA.test(result.commit.sha))
+        throw new GitProviderError('GitHub returned an invalid commit id', 'GIT_FAILED');
+      return { commitSha: result.commit.sha };
+    } catch (error) {
+      // Remove only the branch this call just created, so a retry can start clean.
+      await this.client.delete(`${this.repo}/git/refs/heads/${input.branch}`).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async createReviewRequest(input: {
+    sourceBranch: string;
+    targetBranch: string;
+    title: string;
+    description: string;
+  }): Promise<{ id: number; webUrl: string }> {
+    assertFixBranch(input.sourceBranch);
+    const pr = await this.client.post<{ number: number; html_url: string }>(`${this.repo}/pulls`, {
+      title: input.title,
+      head: input.sourceBranch,
+      base: input.targetBranch,
+      body: input.description,
+      maintainer_can_modify: false,
+    });
+    return { id: pr.number, webUrl: pr.html_url };
+  }
+
+  async branchHead(branch: string): Promise<string | null> {
+    try {
+      const ref = await this.client.get<{ object: { sha: string } }>(
+        `${this.repo}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`,
+      );
+      return ref.object.sha;
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   async resolveDiscussion(_number: number, threadId: string): Promise<void> {
     if (!threadId.startsWith('PRRT_')) return; // only GraphQL review-thread ids can be resolved
     await this.client.graphql(RESOLVE_MUTATION, { threadId });
+  }
+}
+
+function assertFixBranch(branch: string): void {
+  if (!/^ai-review\/fix-[0-9a-f]{8,40}$/.test(branch)) {
+    throw new GitProviderError('Only ai-review/fix-* branches can be written', 'UNSAFE_REF');
   }
 }
 

@@ -40,10 +40,15 @@ export type ModelReviewOutput = z.infer<typeof ModelReviewOutputSchema>;
 
 /** JSON Schema (draft 2020-12) for provider structured-output APIs. */
 export function modelReviewOutputJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(ModelReviewOutputSchema, { target: 'draft-2020-12', io: 'output' }) as Record<
-    string,
-    unknown
-  >;
+  return toProviderJsonSchema(ModelReviewOutputSchema);
+}
+
+/**
+ * Converts any Zod schema written under the portability rules above (strict objects, all properties
+ * required, nullable instead of optional) into the providers' structured-output subset.
+ */
+export function toProviderJsonSchema(zodSchema: z.ZodType): Record<string, unknown> {
+  const schema = z.toJSONSchema(zodSchema, { target: 'draft-2020-12', io: 'output' }) as Record<string, unknown>;
   delete schema['$schema'];
   return stripUnsupportedKeywords(schema) as Record<string, unknown>;
 }

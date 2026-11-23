@@ -8,6 +8,7 @@ import {
   GitProviderError,
   InlinePositionRejectedError,
   type InlineCommentInput,
+  type RepositoryWriter,
   type ReviewPublisher,
   type ReviewRequest,
   type ReviewRequestSource,
@@ -65,7 +66,7 @@ export { InlinePositionRejectedError };
  * GitLab adapter: ReviewRequestSource + ReviewPublisher + FileContentReader for one project.
  * All provider data (paths, descriptions, diffs) is treated as untrusted input.
  */
-export class GitLabProvider implements ReviewRequestSource, ReviewPublisher, FileContentReader {
+export class GitLabProvider implements ReviewRequestSource, ReviewPublisher, FileContentReader, RepositoryWriter {
   private botUserId: Promise<number> | undefined;
 
   constructor(
@@ -238,9 +239,70 @@ export class GitLabProvider implements ReviewRequestSource, ReviewPublisher, Fil
     return hook.id;
   }
 
+  // ---- Approval-gated writes (Phase 6) ----
+
+  async commitFileToNewBranch(input: {
+    branch: string;
+    baseSha: string;
+    path: string;
+    content: string;
+    message: string;
+  }): Promise<{ commitSha: string }> {
+    assertFixBranch(input.branch);
+    if (!SHA.test(input.baseSha)) throw new GitProviderError('Base must be a full commit id', 'UNSAFE_REF');
+    if ((await this.branchHead(input.branch)) !== null) {
+      throw new GitProviderError(`Branch ${input.branch} already exists`, 'GIT_FAILED');
+    }
+    // start_sha creates the branch from exactly the reviewed commit; GitLab refuses an existing branch.
+    const commit = await this.client.post<{ id: string }>(`${this.project}/repository/commits`, {
+      branch: input.branch,
+      start_sha: input.baseSha,
+      commit_message: input.message,
+      actions: [{ action: 'update', file_path: normalizeRepoRelativePath(input.path), content: input.content }],
+    });
+    if (!SHA.test(commit.id)) throw new GitProviderError('GitLab returned an invalid commit id', 'GIT_FAILED');
+    return { commitSha: commit.id };
+  }
+
+  async createReviewRequest(input: {
+    sourceBranch: string;
+    targetBranch: string;
+    title: string;
+    description: string;
+  }): Promise<{ id: number; webUrl: string }> {
+    assertFixBranch(input.sourceBranch);
+    const mr = await this.client.post<{ iid: number; web_url: string }>(`${this.project}/merge_requests`, {
+      source_branch: input.sourceBranch,
+      target_branch: input.targetBranch,
+      title: input.title,
+      description: input.description,
+      remove_source_branch: false,
+      squash: false,
+    });
+    return { id: mr.iid, webUrl: mr.web_url };
+  }
+
+  async branchHead(branch: string): Promise<string | null> {
+    try {
+      const result = await this.client.get<{ commit: { id: string } }>(
+        `${this.project}/repository/branches/${encodeURIComponent(branch)}`,
+      );
+      return result.commit.id;
+    } catch (error) {
+      if (error instanceof GitLabApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   private getBotUserId(): Promise<number> {
     this.botUserId ??= this.client.get<{ id: number }>('/user').then((user) => user.id);
     return this.botUserId;
+  }
+}
+
+function assertFixBranch(branch: string): void {
+  if (!/^ai-review\/fix-[0-9a-f]{8,40}$/.test(branch)) {
+    throw new GitProviderError('Only ai-review/fix-* branches can be written', 'UNSAFE_REF');
   }
 }
 
