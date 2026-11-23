@@ -49,6 +49,21 @@ Verified by integration tests against real git, including a hostile `core.fsmoni
 option injection through `--base`, path traversal, and "repository unchanged after every operation".
 The symlink-escape test is skipped on Windows machines without Developer Mode (symlink creation needs it) and runs on Linux CI.
 
+## 2b. Controls implemented in Phase 3 (AI review engine)
+
+| Control                                                                                                                             | Where                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Explicit consent before any code leaves the machine (`--yes` or interactive yes); destinations shown                                | `ai-review review` (ADR-023)                                          |
+| Secret redaction of every diff line/snippet before prompting; secrets reported as critical findings with redacted evidence          | `redactContext`, `runStaticAnalysis`                                  |
+| Prompt-injection defence: untrusted content inside nonce-delimited blocks, "data not instructions" rules, fixed schema              | `buildReviewPrompt`                                                   |
+| Model output never trusted: Zod re-validation, path normalisation (traversal rejected), deterministic validators decide publication | `parseModelOutput`, `aggregateFindings`, `validateFindings` (ADR-022) |
+| No execution of repository code or model-suggested commands (static analysis is pattern-based)                                      | `review-engine`                                                       |
+| Model text rendered safely: terminal control characters stripped; Markdown escaped                                                  | `safeTerminalText`, `escapeMarkdown`                                  |
+| Repository `.env` never loaded by the CLI (prevents `*_BASE_URL` exfiltration)                                                      | `apps/cli`                                                            |
+| OpenAI `store: false`; LangSmith tracing force-disabled unless explicitly allowed                                                   | adapters, `disableThirdPartyTracing`                                  |
+| Timeouts per provider, SDK retries bounded, output caps (findings, text length), refusal handling                                   | adapters, review graph                                                |
+| Local review history inside `.git/`, owner-only file modes, atomic writes, schema-validated reads                                   | `LocalReviewStore`                                                    |
+
 ### Development-only relaxations (must not reach production)
 
 - `acra_app` has `CREATEDB` so `prisma migrate dev` can create a shadow database. Production roles: no `CREATEDB`; migrations via `migrate deploy`.
@@ -56,24 +71,30 @@ The symlink-escape test is skipped on Windows machines without Developer Mode (s
 
 ## 3. Planned controls (by phase)
 
-| Control                                                                                                                 | Phase |
-| ----------------------------------------------------------------------------------------------------------------------- | ----- |
-| Secret scrubbing of the review context before AI calls (path safety, exclusions and budgets are done in Phase 2)        | 3     |
-| Prompt-injection defences (data/instruction separation, output schema enforcement, no tool execution from model output) | 3     |
-| Webhook signature verification (GitHub `X-Hub-Signature-256`, GitLab token), replay protection                          | 4–5   |
-| SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks)            | 4     |
-| Envelope-encrypted credentials (ADR-011)                                                                                | 4     |
-| Approval workflow: SHA-bound, expiring, patch-hash-bound approvals; merge never implemented                             | 6     |
-| Sandboxed fix validation: temp worktree, command allowlist, CPU/memory/time limits, no network                          | 6     |
-| AuthN/AuthZ, rate limiting (`@nestjs/throttler`), CSRF strategy for cookie sessions                                     | 7–8   |
-| Dependency scanning, container hardening, RLS evaluation, security audit                                                | 8     |
+| Control                                                                                                      | Phase |
+| ------------------------------------------------------------------------------------------------------------ | ----- |
+| Webhook signature verification (GitHub `X-Hub-Signature-256`, GitLab token), replay protection               | 4–5   |
+| SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks) | 4     |
+| Envelope-encrypted credentials (ADR-011)                                                                     | 4     |
+| Approval workflow: SHA-bound, expiring, patch-hash-bound approvals; merge never implemented                  | 6     |
+| Sandboxed fix validation: temp worktree, command allowlist, CPU/memory/time limits, no network               | 6     |
+| AuthN/AuthZ, rate limiting (`@nestjs/throttler`), CSRF strategy for cookie sessions                          | 7–8   |
+| Dependency scanning, container hardening, RLS evaluation, security audit                                     | 8     |
 
-## 4. Data sent to external AI providers (draft — finalised in Phase 3)
+## 4. Data sent to external AI providers (implemented in Phase 3)
 
-Only: the diff hunks under review, bounded surrounding context of changed files, file paths, and the
-review instructions. Never: credentials, `.env` files, excluded paths, or files over configured size limits.
-A secret scrubber runs before every provider call. Repository-level `ai-review.yaml` and org settings can
-disable providers or the server mode entirely.
+See [REVIEW_WORKFLOW.md §7](./REVIEW_WORKFLOW.md) and ADR-023. Only with explicit consent, and only:
+
+- diff hunks of included files;
+- bounded surrounding lines;
+- paths and statuses;
+- names of omitted files;
+- the review instructions.
+
+Secrets are redacted before the prompt is built. Excluded, binary and oversized files are never sent, and
+neither are `.env` files, credentials or local history. OpenAI requests use `store: false`. Third-party
+(LangSmith) tracing is force-disabled. Destinations, including custom `*_BASE_URL` hosts, are shown before
+consent.
 
 ## 5. Reporting
 

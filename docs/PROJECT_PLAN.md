@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 2 complete — awaiting approval for Phase 3.** Last updated: 2026-11-23.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23).
+> Status: **Phase 3 complete — awaiting approval for Phase 4.** Last updated: 2026-11-23.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23).
 
 ## 1. Phase overview
 
@@ -10,8 +10,8 @@
 | 0     | Environment and workspace inspection               | ✅ Complete (this document) |
 | 1     | Project foundation                                 | ✅ Complete (2026-11-23)    |
 | 2     | Local Git integration + CLI                        | ✅ Complete (2026-11-23)    |
-| 3     | AI review engine (Claude + GPT, validation, dedup) | ⏳ Awaiting approval        |
-| 4     | GitLab integration                                 | Not started                 |
+| 3     | AI review engine (Claude + GPT, validation, dedup) | ✅ Complete (2026-11-23)    |
+| 4     | GitLab integration                                 | ⏳ Awaiting approval        |
 | 5     | GitHub App integration                             | Not started                 |
 | 6     | Approval and fix workflow                          | Not started                 |
 | 7     | Angular dashboard (feature build-out)              | Not started                 |
@@ -231,3 +231,58 @@ Branch: `feature/phase-2-local-git` (based on `feature/phase-1-foundation`).
   reruns passed, so the cause was not reproduced.
 - The CLI build resolves third-party packages from the workspace `node_modules`. A standalone distributable
   (bundled dependencies, `bin` entry) is planned for Phase 8.
+
+## 8. Phase 3 results (2026-11-23)
+
+Branch: `feature/phase-3-ai-review-engine` (based on `feature/phase-2-local-git`).
+
+### 8.1 Roadmap items
+
+| Roadmap item                             | Delivered                                                                                                                                                                                                                  |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integrate Claude                         | `ai-providers-claude`: `claude-opus-5-5`, adaptive thinking + `effort: high`, streamed, `output_config.format` json_schema, cached system prompt, server-side refusal fallback, typed error mapping, cost from list prices |
+| Integrate GPT                            | `ai-providers-openai`: Responses API, strict json_schema, `store: false`, refusal/incomplete handling, configurable model and prices                                                                                       |
+| Parallel execution                       | LangGraph `StateGraph` with `Send` fan-out; per-provider timeout; failures isolated (`partial` status)                                                                                                                     |
+| Structured outputs                       | One shared Zod schema → JSON Schema (portable subset, tested), re-validated locally                                                                                                                                        |
+| Aggregation / validation / deduplication | `review-engine`: Module E rules, evidence matching, speculation/style filters, line-independent fingerprints, clustering, capped agreement bonus, recorded disagreement                                                    |
+| Confidence & severity                    | Deterministic adjustments, thresholds from `ai-review.yaml`                                                                                                                                                                |
+| Static analysis                          | Secrets + risky-API checks on added lines (no repository code executed)                                                                                                                                                    |
+| Review reports                           | `ReviewReport` schema; text, JSON and escaped Markdown renderers                                                                                                                                                           |
+| Finding lifecycle                        | Transition table, reconciliation (still present / resolved / user-suppressed), `ai-review dismiss`                                                                                                                         |
+| CLI (Module A)                           | `review`, `findings`, `report`, `dismiss`, consent gate, `--fail-on` CI exit code 3, local history in `.git/ai-review/`                                                                                                    |
+| Angular review intelligence (§11)        | Angular v22 guidance in the system prompt; Angular sanitizer-bypass static check                                                                                                                                           |
+
+### 8.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **19 projects**. **203 unit tests** pass, 1 skipped (the symlink test on Windows).
+- `pnpm test:integration`: **52 tests** pass (database 6, api 6, worker 2, local git 19, CLI 19). The CLI suite runs
+  real temporary git repositories with fake AI reviewers. It covers consent refusal and decline, the identical prompt for
+  both models, secret redaction, the stored report, the unchanged working tree, partial and total provider failure,
+  `--fail-on`, dismiss → suppressed on re-review, and resolved-after-fix.
+- Built CLI smoke test on this repository: `review` without `--yes` refuses (exit 2) and shows "95 files, 391 KB, secrets
+  redacted, to claude (claude-opus-5-5 via api.anthropic.com)". Nothing was sent and nothing was stored. GPT without
+  `OPENAI_REVIEW_MODEL` is skipped with a clear message.
+- **Not verified against the real APIs:** no `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` is configured on this machine.
+  Opt-in live tests exist (`pnpm nx run ai-providers-claude:live`, `ai-providers-openai:live`) and were skipped.
+  Request shapes are checked by the SDKs' TypeScript types and by unit tests with mocked clients.
+
+### 8.3 Deviations and decisions
+
+| Item                    | Decision                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| GPT default model       | **None.** `OPENAI_REVIEW_MODEL` is required; GPT is skipped without it (ADR-024)                                 |
+| Claude refusal fallback | Enabled by default (`fallbacks: "default"`); recorded as `servedByModel` (ADR-024)                               |
+| Review DB tables        | Moved to Phase 4 (worker), local `.git/ai-review/` store for the CLI (ADR-025)                                   |
+| Static analysis         | Built-in pattern checks only; repository linters/tests run in the Phase 6 sandbox (untrusted code)               |
+| Review categories       | All 10 from Module D (`error_handling`, `concurrency`, `data_consistency`, `scalability` added to the brief's 6) |
+| `ai-review dismiss`     | New command (Module F requires dismissing false positives locally)                                               |
+| Live API tests          | Opt-in targets, never part of `pnpm check` (they cost money)                                                     |
+
+### 8.4 Known limitations / follow-ups
+
+- First real runs should be watched for prompt quality and cost, and `minimumConfidence` / effort may need tuning.
+  This needs API keys.
+- Speculation and style filters are keyword heuristics. They are tested, but will need tuning against real reviews.
+- Custom repository rules (free text in `ai-review.yaml`) are not supported yet. They need an injection-resistant design.
+- Claude cost estimates use the serving model's list price for the whole turn. When a fallback ran, the actual bill
+  may differ slightly.

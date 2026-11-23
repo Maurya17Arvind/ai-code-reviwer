@@ -45,6 +45,8 @@ export interface ContextFile {
   /** Surrounding source around each hunk (merged windows). */
   readonly snippets: readonly ContextSnippet[];
   readonly bytes: number;
+  /** Number of lines in the version the snippets were read from (`new` side, or `old` for deletions); null if not read. */
+  readonly lineCount: number | null;
 }
 
 export interface OmittedFile {
@@ -158,6 +160,7 @@ async function buildContextFile(
 ): Promise<ContextFile | { reason: OmissionReason; detail?: string }> {
   const side: 'new' | 'old' = file.status === 'deleted' ? 'old' : 'new';
   let snippets: ContextSnippet[] = [];
+  let lineCount: number | null = null;
 
   if (file.hunks.length > 0) {
     const revision = side === 'old' ? changeSet.base : changeSet.head;
@@ -167,7 +170,9 @@ async function buildContextFile(
     if (content.tooLarge || content.sizeBytes > budget.maxFileBytes) {
       return { reason: 'too_large', detail: `${content.sizeBytes} bytes > ${budget.maxFileBytes}` };
     }
-    snippets = extractSnippets(splitLines(content.content), file.hunks, side, budget.surroundingLines);
+    const lines = splitLines(content.content);
+    lineCount = lines.length;
+    snippets = extractSnippets(lines, file.hunks, side, budget.surroundingLines);
   }
 
   const hunkBytes = file.hunks.reduce(
@@ -185,6 +190,7 @@ async function buildContextFile(
     deletions: file.deletions,
     hunks: file.hunks,
     snippets,
+    lineCount,
     bytes: hunkBytes + snippetBytes,
   };
 }

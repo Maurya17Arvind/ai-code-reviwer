@@ -1,0 +1,20 @@
+{
+  "name": "ai-providers-core",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/ai-providers/core/src",
+  "projectType": "library",
+  "tags": ["scope:node", "type:port"],
+  "// targets": "to see all targets run: nx show project ai-providers-core --web",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "tsc --noEmit -p {projectRoot}/tsconfig.lib.json",
+          "tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

@@ -4,12 +4,13 @@ A standalone, multi-tenant code review platform. Claude and GPT independently re
 repositories, GitLab merge requests and GitHub pull requests. A deterministic validation layer decides what gets
 published, and every code or Git change requires human approval. Merging is never automated.
 
-> **Status: Phase 2 (local Git + CLI) complete.** The foundation, read-only local Git adapter, diff parser, review-context builder and `ai-review init | status | changes` are in place.
-> AI review (Claude + GPT) starts in Phase 3. See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) and [docs/CLI.md](docs/CLI.md).
+> **Status: Phase 3 (AI review engine) complete.** `ai-review review` runs Claude and GPT in parallel on local changes,
+> validates and deduplicates findings deterministically, and keeps history in `.git/ai-review/`. GitLab follows in Phase 4.
+> See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) and [docs/CLI.md](docs/CLI.md).
 
 ## Stack
 
-Nx 24 · TypeScript 6.0 · Angular 22.3 (zoneless, signals) · NestJS 11 · PostgreSQL 18 + Prisma 7 ·
+Claude (Anthropic SDK) + GPT (OpenAI SDK) via LangGraph · Nx 24 · TypeScript 6.0 · Angular 22.3 (zoneless, signals) · NestJS 11 · PostgreSQL 18 + Prisma 7 ·
 Redis 8 + BullMQ 6 · Zod 4 · Vitest 5 · pnpm 10 · Node 24 LTS
 
 ## Repository layout
@@ -19,7 +20,7 @@ apps/
   api/          NestJS HTTP API (health, error envelope, security headers)
   worker/       NestJS BullMQ worker (no HTTP)
   dashboard/    Angular 22 dashboard
-  cli/          `ai-review` command-line tool (init, status, changes)
+  cli/          `ai-review` command-line tool (init, status, changes, review, findings, report, dismiss)
 libs/
   shared/types        domain enums (browser-safe)
   shared/contracts    API contracts (browser-safe)
@@ -30,6 +31,9 @@ libs/
   git-providers/core  provider ports and diff model
   git-providers/local read-only local Git adapter
   repository-context  diff parser and review-context builder
+  ai-providers/*      AiReviewer port, Claude and GPT adapters
+  review-engine       static analysis, prompt, validation, dedup, lifecycle, reports
+  agent-core          LangGraph review pipeline
 infrastructure/       Docker init scripts
 tools/testing/        integration-test configuration
 docs/                 architecture, ADRs, design docs

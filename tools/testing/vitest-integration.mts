@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config';
 export interface IntegrationConfigOptions {
   /** Environment variables the suite needs (default: PostgreSQL + Redis). Use [] for git-only suites. */
   readonly requiredEnv?: readonly string[];
+  /** Spec file pattern (default: integration specs). */
+  readonly include?: string;
 }
 
 /**
@@ -21,10 +23,10 @@ export function integrationConfig(projectDir: string, name: string, options: Int
       watch: false,
       globals: true,
       environment: 'node',
-      include: ['src/**/*.integration.spec.ts'],
+      include: [options.include ?? 'src/**/*.integration.spec.ts'],
       setupFiles: [resolve(import.meta.dirname, 'integration-env.mts')],
       env: { ACRA_REQUIRED_ENV: requiredEnv.join(',') },
-      testTimeout: 30_000,
+      testTimeout: options.include?.includes('.live.') ? 600_000 : 30_000,
       hookTimeout: 30_000,
       fileParallelism: false,
       reporters: ['default'],

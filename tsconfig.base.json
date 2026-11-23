@@ -30,7 +30,12 @@
       "@acra/git-providers-core": ["./libs/git-providers/core/src/index.ts"],
       "@acra/git-providers-local": ["./libs/git-providers/local/src/index.ts"],
       "@acra/repository-context": ["./libs/repository-context/src/index.ts"],
-      "@acra/testing": ["./tools/testing/index.ts"]
+      "@acra/testing": ["./tools/testing/index.ts"],
+      "@acra/ai-providers-core": ["./libs/ai-providers/core/src/index.ts"],
+      "@acra/ai-providers-claude": ["./libs/ai-providers/claude/src/index.ts"],
+      "@acra/ai-providers-openai": ["./libs/ai-providers/openai/src/index.ts"],
+      "@acra/review-engine": ["./libs/review-engine/src/index.ts"],
+      "@acra/agent-core": ["./libs/agent-core/src/index.ts"]
     },
     "exactOptionalPropertyTypes": true
   },

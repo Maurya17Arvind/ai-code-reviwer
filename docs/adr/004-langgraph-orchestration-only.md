@@ -1,6 +1,6 @@
 # ADR-004: LangGraph for orchestration, vendor SDKs behind a port
 
-**Status:** Proposed (implementation in Phase 3) · 2026-11-23
+**Status:** Accepted (implemented in Phase 3, `libs/agent-core`) · 2026-11-23
 
 ## Context
 

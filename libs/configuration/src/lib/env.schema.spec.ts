@@ -70,3 +70,24 @@ describe('WorkerEnvSchema', () => {
     expect(() => loadEnv(WorkerEnvSchema, { DATABASE_URL: validApiEnv.DATABASE_URL })).toThrowError(/REDIS_URL/);
   });
 });
+
+describe('AiEnvSchema', () => {
+  it('defaults to Claude Opus 5.5 at high effort and leaves the GPT model unset', async () => {
+    const { AiEnvSchema } = await import('./ai-env.schema');
+    const env = loadEnv(AiEnvSchema, {});
+    expect(env).toMatchObject({
+      ANTHROPIC_REVIEW_MODEL: 'claude-opus-5-5',
+      ANTHROPIC_REVIEW_EFFORT: 'high',
+      ANTHROPIC_REFUSAL_FALLBACK: true,
+      AI_REVIEW_TIMEOUT_MS: 600_000,
+    });
+    expect(env.OPENAI_REVIEW_MODEL).toBeUndefined();
+  });
+
+  it('rejects malformed model ids and timeouts without echoing them', async () => {
+    const { AiEnvSchema } = await import('./ai-env.schema');
+    expect(() =>
+      loadEnv(AiEnvSchema, { OPENAI_REVIEW_MODEL: 'gpt; rm -rf /', AI_REVIEW_TIMEOUT_MS: '5' }),
+    ).toThrowError(/OPENAI_REVIEW_MODEL[\s\S]*AI_REVIEW_TIMEOUT_MS/);
+  });
+});

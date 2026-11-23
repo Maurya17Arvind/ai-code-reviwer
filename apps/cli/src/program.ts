@@ -1,22 +1,29 @@
 import { Command } from 'commander';
 import { registerChangesCommand } from './commands/changes.command';
+import { registerFindingsCommand, registerReportCommand } from './commands/findings.command';
 import { registerInitCommand } from './commands/init.command';
+import { registerReviewCommand } from './commands/review.command';
 import { registerStatusCommand } from './commands/status.command';
 import { type CliIO } from './core/cli-context';
+import { createReviewers, type ReviewerFactory } from './core/reviewers';
 
 export const CLI_NAME = 'ai-review';
-export const CLI_VERSION = '0.2.0';
+export const CLI_VERSION = '0.3.0';
+
+export interface CliDeps {
+  /** Builds the AI reviewers; tests inject fakes so no real API is ever called. */
+  readonly createReviewers: ReviewerFactory;
+}
+
+const defaultDeps: CliDeps = { createReviewers };
 
 /**
  * Builds the `ai-review` command tree.
  *
- * Phase 2: `init`, `status`, `changes`. `review`, `findings` and `report` need the AI review
- * engine and arrive in Phase 3 — they are intentionally not registered as placeholders.
- *
  * Invariant for every command: the CLI never modifies, stages, commits or pushes code.
- * (`init` creates only ai-review.yaml, on explicit request.)
+ * (`init` creates only ai-review.yaml on request; review history lives under .git/ai-review/.)
  */
-export function buildProgram(io: CliIO): Command {
+export function buildProgram(io: CliIO, deps: CliDeps = defaultDeps): Command {
   const program = new Command()
     .name(CLI_NAME)
     .description('AI Code Review Agent — review local Git changes with Claude and GPT before opening an MR/PR.')
@@ -29,5 +36,8 @@ export function buildProgram(io: CliIO): Command {
   registerInitCommand(program, io);
   registerStatusCommand(program, io);
   registerChangesCommand(program, io);
+  registerReviewCommand(program, io, deps.createReviewers);
+  registerFindingsCommand(program, io);
+  registerReportCommand(program, io);
   return program;
 }

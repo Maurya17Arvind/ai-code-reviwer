@@ -41,19 +41,22 @@ append-only trigger, non-superuser connection).
 
 ## 3. Target model (added in the phase that uses it)
 
+> Review tables moved from Phase 3 to Phase 4 (ADR-025): in Phase 3 only the local CLI runs reviews, and it stores
+> `ReviewReport`s in `.git/ai-review/`. The tables mirror that report shape.
+
 | Table                        | Phase | Purpose / notable columns                                                                                                                                                                                                 |
 | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `provider_connections`       | 4/5   | Org-level GitLab/GitHub connection: `kind`, `base_url` (SSRF-validated), `encrypted_credentials` (ciphertext, iv, tag, key_version — ADR-011), `webhook_secret_encrypted`, `github_installation_id`                       |
 | `repositories.connection_id` | 4/5   | FK to `provider_connections` (nullable for LOCAL)                                                                                                                                                                         |
-| `repository_configs`         | 3     | Validated `ai-review.yaml` snapshot per repo + commit SHA, `config_hash`, server-side overrides                                                                                                                           |
-| `review_sessions`            | 3     | `repository_id`, `trigger` (local/webhook/manual), `request_ref` (MR/PR iid), `base_sha`, `head_sha`, `context_hash`, `status` (`QUEUED/RUNNING/PARTIAL/COMPLETED/FAILED/SUPERSEDED`), `idempotency_key` unique           |
-| `model_executions`           | 3     | `review_session_id`, `provider`, `model`, `status`, `input_tokens`, `output_tokens`, `cost_micros`, `latency_ms`, `error_code`, `raw_output_ref`                                                                          |
-| `review_findings`            | 3     | Fields of the `ReviewFinding` schema + `fingerprint` (indexed with `repository_id`), `status` lifecycle (`NEW/VALIDATED/PUBLISHED/RESOLVED/DISMISSED/FALSE_POSITIVE`), `model_sources`, `first_seen_sha`, `last_seen_sha` |
+| `repository_configs`         | 4     | Validated `ai-review.yaml` snapshot per repo + commit SHA, `config_hash`, server-side overrides                                                                                                                           |
+| `review_sessions`            | 4     | `repository_id`, `trigger` (local/webhook/manual), `request_ref` (MR/PR iid), `base_sha`, `head_sha`, `context_hash`, `status` (`QUEUED/RUNNING/PARTIAL/COMPLETED/FAILED/SUPERSEDED`), `idempotency_key` unique           |
+| `model_executions`           | 4     | `review_session_id`, `provider`, `model`, `status`, `input_tokens`, `output_tokens`, `cost_micros`, `latency_ms`, `error_code`, `raw_output_ref`                                                                          |
+| `review_findings`            | 4     | Fields of the `ReviewFinding` schema + `fingerprint` (indexed with `repository_id`), `status` lifecycle (`NEW/VALIDATED/PUBLISHED/RESOLVED/DISMISSED/FALSE_POSITIVE`), `model_sources`, `first_seen_sha`, `last_seen_sha` |
 | `review_comments`            | 4/5   | Published comment ↔ finding mapping: `provider_comment_id`, `discussion_id`, `kind` (inline/summary), `body_hash` (duplicate suppression)                                                                                 |
-| `review_feedback`            | 3+    | User feedback on findings (helpful / false positive + reason)                                                                                                                                                             |
+| `review_feedback`            | 4+    | User feedback on findings (helpful / false positive + reason)                                                                                                                                                             |
 | `proposed_fixes`             | 6     | `finding_id`, `patch` (unified diff), `patch_sha256`, `explanation`, `base_sha`, validation results                                                                                                                       |
 | `approval_requests`          | 6     | `organization_id`, `repository_id`, `review_session_id`, `commit_sha`, `operation` (enum), `payload` + `payload_sha256`, `requested_by`, `decided_by`, `status`, `expires_at`; invalidated when head SHA changes          |
-| `background_jobs`            | 3     | Durable record of queued work: `queue`, `job_id`, `idempotency_key` unique, `status`, `attempts`, `last_error_code`                                                                                                       |
+| `background_jobs`            | 4     | Durable record of queued work: `queue`, `job_id`, `idempotency_key` unique, `status`, `attempts`, `last_error_code`                                                                                                       |
 
 Indexes are added with each table based on its query patterns; every list endpoint gets a supporting
 `(organization_id, …, created_at desc, id)` index for keyset pagination.

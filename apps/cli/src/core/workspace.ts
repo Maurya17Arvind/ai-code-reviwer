@@ -1,4 +1,5 @@
 import {
+  ConfigValidationError,
   defaultReviewConfig,
   parseReviewConfig,
   REVIEW_CONFIG_FILENAME,
@@ -44,6 +45,12 @@ export async function loadRepositoryConfig(provider: LocalGitProvider): Promise<
 
 export function toCliError(error: unknown): Error {
   if (error instanceof CliError) return error;
-  if (error instanceof GitProviderError || error instanceof ReviewConfigError) return new CliError(error.message);
+  if (
+    error instanceof GitProviderError ||
+    error instanceof ReviewConfigError ||
+    error instanceof ConfigValidationError
+  ) {
+    return new CliError(error.message);
+  }
   return error instanceof Error ? error : new Error(String(error));
 }

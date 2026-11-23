@@ -1,10 +1,10 @@
-import { DEFAULT_EXCLUDE_GLOBS } from '@acra/configuration';
 import { describeRevision, describeScope, type FileChangeStatus } from '@acra/git-providers-core';
-import { buildReviewContext, type ReviewContext } from '@acra/repository-context';
+import { type ReviewContext } from '@acra/repository-context';
 import { type Command, InvalidArgumentError, Option } from 'commander';
 import { type CliIO, formatBytes, paint } from '../core/cli-context';
-import { resolveScope, type ScopeFlags } from '../core/scope';
-import { type GlobalOptions, loadRepositoryConfig, openRepository, toCliError } from '../core/workspace';
+import { loadReviewContext } from '../core/review-context';
+import { type ScopeFlags } from '../core/scope';
+import { type GlobalOptions, openRepository, toCliError } from '../core/workspace';
 
 interface ChangesOptions extends ScopeFlags {
   readonly format: 'text' | 'json';
@@ -56,20 +56,7 @@ export function registerChangesCommand(program: Command, io: CliIO): void {
     .action(async (options: ChangesOptions, command: Command) => {
       const provider = await openRepository(io, command.optsWithGlobals<GlobalOptions>());
       try {
-        const info = await provider.getRepositoryInfo();
-        const { source, config } = await loadRepositoryConfig(provider);
-        const scope = resolveScope(options, info);
-        const changeSet = await provider.getChangeSet(
-          scope,
-          options.diffContext === undefined ? {} : { diffContextLines: options.diffContext },
-        );
-        const context = await buildReviewContext(changeSet, provider, {
-          exclude: [...DEFAULT_EXCLUDE_GLOBS, ...config.review.exclude],
-          budget: {
-            ...config.review.context,
-            ...(options.surrounding === undefined ? {} : { surroundingLines: options.surrounding }),
-          },
-        });
+        const { info, configSource: source, config, context } = await loadReviewContext(provider, options);
 
         if (options.format === 'json') {
           io.out(

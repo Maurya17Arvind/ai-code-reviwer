@@ -181,6 +181,16 @@ export class LocalGitProvider implements RepositoryReader {
     return { sha: fullSha.trim(), authorName, authorEmail, authoredAt, subject, body: body.trimEnd() };
   }
 
+  /**
+   * Absolute path of the repository's .git directory (read-only query). Used by the CLI to keep
+   * local review history outside the working tree, where it is never committed.
+   */
+  async getGitDirectory(): Promise<string> {
+    const dir = emptyToNull(await this.tryRun(['rev-parse', '--absolute-git-dir']));
+    if (!dir) throw new GitProviderError('Could not locate the .git directory', 'GIT_FAILED');
+    return dir;
+  }
+
   /** Resolves a user-supplied revision to a full commit id. */
   async resolveCommit(ref: string): Promise<string> {
     try {

@@ -1,6 +1,6 @@
 # Architecture — AI Code Review Agent
 
-> Status: **Phase 1 implemented** (foundation). Last updated: 2026-11-23.
+> Status: **Phases 1–3 implemented** (foundation, local Git + CLI, AI review engine). Last updated: 2026-11-23.
 > Decisions are recorded as ADRs in [`docs/adr/`](./adr/README.md).
 
 ## 1. Purpose and scope
@@ -31,12 +31,12 @@ mutation needs explicit human approval, and merging is never performed.
 
 ## 3. Deployable applications
 
-| App              | Tech                                         | Responsibility                                                      | Must NOT                           | Phase 1 state                                                                    |
-| ---------------- | -------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
-| `apps/api`       | NestJS 11 + Express 5                        | HTTP API, auth, webhook intake, approval endpoints, enqueuing jobs  | Run AI reviews inline              | Health probes, error envelope, helmet, CORS allowlist, request IDs, pino logging |
-| `apps/worker`    | NestJS 11 application context (no HTTP)      | Consume BullMQ queues: reviews, publishing, fixes, approved Git ops | Expose HTTP                        | Consumes `system` queue (`heartbeat` job)                                        |
-| `apps/dashboard` | Angular 22.3 (standalone, zoneless, signals) | UI for orgs, repos, reviews, findings, approvals, analytics, audit  | Import server code or see secrets  | Shell, lazy routes, System status page                                           |
-| `apps/cli`       | Node + commander                             | `ai-review` local review, reports, findings                         | Modify, stage, commit or push code | `init`, `status`, `changes` (Phase 2) — see [CLI.md](./CLI.md)                   |
+| App              | Tech                                         | Responsibility                                                      | Must NOT                           | Phase 1 state                                                                                   |
+| ---------------- | -------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `apps/api`       | NestJS 11 + Express 5                        | HTTP API, auth, webhook intake, approval endpoints, enqueuing jobs  | Run AI reviews inline              | Health probes, error envelope, helmet, CORS allowlist, request IDs, pino logging                |
+| `apps/worker`    | NestJS 11 application context (no HTTP)      | Consume BullMQ queues: reviews, publishing, fixes, approved Git ops | Expose HTTP                        | Consumes `system` queue (`heartbeat` job)                                                       |
+| `apps/dashboard` | Angular 22.3 (standalone, zoneless, signals) | UI for orgs, repos, reviews, findings, approvals, analytics, audit  | Import server code or see secrets  | Shell, lazy routes, System status page                                                          |
+| `apps/cli`       | Node + commander                             | `ai-review` local review, reports, findings                         | Modify, stage, commit or push code | `init`, `status`, `changes`, `review`, `findings`, `dismiss`, `report` — see [CLI.md](./CLI.md) |
 
 API and worker are separate processes (ADR-009). Webhook intake stays fast, review throughput scales on
 its own, and a crashing job cannot take the API down.
@@ -59,9 +59,9 @@ libs/
 │   └── github/           ⏳ Phase 5
 ├── repository-context/   ✅ Phase 2 — unified-diff parser, path filter, review context builder, context hash
 │
-├── agent-core/           ⏳ Phase 3 — LangGraph StateGraph, node contracts, run tracing
-├── review-engine/        ⏳ Phase 3 — analyzers, reviewers, aggregator, validators, dedup, lifecycle
-├── ai-providers/{core,claude,openai}        ⏳ Phase 3
+├── agent-core/           ✅ Phase 3 — LangGraph review graph (parallel reviewers via Send), tracing guard
+├── review-engine/        ✅ Phase 3 — secrets, static analyzers, prompt builder, aggregator, validators, dedup, lifecycle, report
+├── ai-providers/{core,claude,openai}        ✅ Phase 3 — AiReviewer port + shared output schema; Claude & GPT adapters
 ├── publishing/           ⏳ Phase 4
 ├── approvals/            ⏳ Phase 6
 └── fix-engine/           ⏳ Phase 6
@@ -75,13 +75,13 @@ Libraries are created in the phase that first needs them, to avoid empty abstrac
 
 Every project carries one `scope:*` and one `type:*` tag (see root `eslint.config.mjs`).
 
-| Scope tag         | Meaning                                                                                             | May depend on                                                              |
-| ----------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `scope:shared`    | Browser-safe (shared/types, shared/contracts)                                                       | `scope:shared`                                                             |
-| `scope:node`      | Node code usable by server **and** CLI (configuration, security, git-providers, repository-context) | `scope:shared`, `scope:node`                                               |
-| `scope:server`    | Server infrastructure (database, queue, api, worker)                                                | `scope:shared`, `scope:node`, `scope:server`                               |
-| `scope:dashboard` | Angular app                                                                                         | `scope:shared` only. No server code reaches the browser                    |
-| `scope:cli`       | Local CLI                                                                                           | `scope:shared`, `scope:node`, `scope:cli`. **Never** the database or queue |
+| Scope tag         | Meaning                                                                                                                                      | May depend on                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `scope:shared`    | Browser-safe (shared/types, shared/contracts)                                                                                                | `scope:shared`                                                             |
+| `scope:node`      | Node code usable by server **and** CLI (configuration, security, git-providers, repository-context, ai-providers, review-engine, agent-core) | `scope:shared`, `scope:node`                                               |
+| `scope:server`    | Server infrastructure (database, queue, api, worker)                                                                                         | `scope:shared`, `scope:node`, `scope:server`                               |
+| `scope:dashboard` | Angular app                                                                                                                                  | `scope:shared` only. No server code reaches the browser                    |
+| `scope:cli`       | Local CLI                                                                                                                                    | `scope:shared`, `scope:node`, `scope:cli`. **Never** the database or queue |
 
 | Type tag       | May depend on                                           |
 | -------------- | ------------------------------------------------------- |
@@ -158,7 +158,7 @@ mode, `GIT_*` environment stripped) and forces `core.fsmonitor=false`, pinned di
 `--no-ext-diff --no-textconv`. It validates refs (`assertSafeGitRef`) and resolves paths inside the repository,
 including symlink targets (`resolveInsideRepo`). File reads are size-limited and binary-sniffed.
 
-## 7. Review pipeline (summary; detailed in `REVIEW_WORKFLOW.md`, Phase 3)
+## 7. Review pipeline (implemented in Phase 3; full specification in [`REVIEW_WORKFLOW.md`](./REVIEW_WORKFLOW.md))
 
 `RECEIVE_REQUEST → IDENTIFY_REPOSITORY → FETCH_COMMIT_AND_DIFF → BUILD_REPOSITORY_CONTEXT →
 ANALYZE_CHANGED_FILES → RUN_STATIC_ANALYSIS → PARALLEL_AI_REVIEW (Claude ‖ GPT) →
@@ -210,7 +210,8 @@ Invariants:
 | ESLint / typescript-eslint / angular-eslint | 10.15.0 / 8.73.0 / 22.8.0                                      | Flat config                                                               |
 | Prettier                                    | 3.10.1                                                         | Angular parser for templates                                              |
 | React (dev only)                            | 19.3.1                                                         | Peer of Prisma Studio (`@prisma/studio-core`); not used by any app        |
-| LangGraph, Anthropic SDK, OpenAI SDK        | 1.7.5, 1.12.0, 7.62.0                                          | **Not installed yet** — Phase 3                                           |
+| LangGraph / @langchain/core                 | 1.7.5 / 1.5.0                                                  | Orchestration only (ADR-004); LangSmith tracing force-disabled (ADR-023)  |
+| @anthropic-ai/sdk / openai                  | 1.12.0 / 7.62.0                                                | Claude `claude-opus-5-5` default; GPT model must be configured (ADR-024)  |
 | simple-git / yaml / picomatch               | 4.1.0 / 2.9.1 / 4.0.7                                          | Phase 2: local git (strict mode), ai-review.yaml parsing, exclusion globs |
 | gitbeaker / Octokit                         | 44.1.10 / 16.x                                                 | **Not installed yet** — Phases 4, 5                                       |
 

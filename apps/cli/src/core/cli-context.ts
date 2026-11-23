@@ -1,11 +1,16 @@
+import { createInterface } from 'node:readline/promises';
 import { styleText } from 'node:util';
 
-/** I/O boundary of the CLI. Commands never touch process.stdout/exit directly (testability). */
+/** I/O boundary of the CLI. Commands never touch process.stdout/env/exit directly (testability). */
 export interface CliIO {
   readonly cwd: string;
   readonly color: boolean;
+  /** Process environment (injected so tests never depend on the developer's real keys). */
+  readonly env: Readonly<Record<string, string | undefined>>;
   out(text: string): void;
   err(text: string): void;
+  /** Asks a yes/no question; undefined when no interactive terminal is available. */
+  readonly confirm?: (question: string) => Promise<boolean>;
 }
 
 /** Expected failure with a user-facing message and exit code. */
@@ -27,11 +32,25 @@ export function paint(io: CliIO, style: Style, text: string): string {
 
 export function processIO(): CliIO {
   const color = Boolean(process.stdout.isTTY) && !('NO_COLOR' in process.env) && process.env['TERM'] !== 'dumb';
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   return {
     cwd: process.cwd(),
     color,
+    env: process.env,
     out: (text) => process.stdout.write(text.endsWith('\n') ? text : `${text}\n`),
     err: (text) => process.stderr.write(text.endsWith('\n') ? text : `${text}\n`),
+    ...(interactive
+      ? {
+          confirm: async (question: string) => {
+            const rl = createInterface({ input: process.stdin, output: process.stdout });
+            try {
+              return /^y(es)?$/i.test((await rl.question(`${question} [y/N] `)).trim());
+            } finally {
+              rl.close();
+            }
+          },
+        }
+      : {}),
   };
 }
 
