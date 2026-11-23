@@ -1,0 +1,9 @@
+/dist
+/coverage
+/.nx/cache
+/.nx/workspace-data
+/.angular
+pnpm-lock.yaml
+libs/database/src/generated
+libs/database/prisma/migrations
+patches

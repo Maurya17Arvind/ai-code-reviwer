@@ -1,0 +1,56 @@
+<section aria-labelledby="system-status-heading">
+  <div class="heading-row">
+    <h1 id="system-status-heading">System status</h1>
+    <button type="button" (click)="refresh()" [disabled]="isRefreshing()">
+      {{ isRefreshing() ? 'Checking…' : 'Refresh' }}
+    </button>
+  </div>
+
+  <div role="status" aria-live="polite">
+    @switch (state().kind) {
+      @case ('loading') {
+        <p class="muted">Checking backend health…</p>
+      }
+      @case ('error') {
+        <p class="banner banner-error" data-testid="status-error">
+          The API could not be reached. Make sure the API server is running, then refresh.
+        </p>
+      }
+      @case ('loaded') {
+        @if (readiness(); as data) {
+          <p
+            class="banner"
+            [class.banner-ok]="data.status === 'ok'"
+            [class.banner-error]="data.status !== 'ok'"
+            data-testid="status-summary"
+          >
+            {{ summary() }}
+          </p>
+
+          <ul class="checks">
+            @for (check of data.checks; track check.name) {
+              <li class="check">
+                <span class="check-name">{{ labels[check.name] }}</span>
+                <span
+                  class="badge"
+                  [class.badge-up]="check.status === 'up'"
+                  [class.badge-down]="check.status === 'down'"
+                >
+                  {{ check.status === 'up' ? 'Operational' : 'Unavailable' }}
+                  @if (check.reason === 'timeout') {
+                    (timed out)
+                  }
+                </span>
+                <span class="muted">{{ check.latencyMs }} ms</span>
+              </li>
+            } @empty {
+              <li class="muted">No dependency checks reported.</li>
+            }
+          </ul>
+
+          <p class="muted small">Last checked {{ data.timestamp | date: 'medium' }}</p>
+        }
+      }
+    }
+  </div>
+</section>

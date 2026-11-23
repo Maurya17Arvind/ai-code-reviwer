@@ -1,0 +1,50 @@
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+
+# dependencies
+node_modules
+
+# environment / secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Prisma generated client
+libs/database/src/generated/
+
+# test output
+coverage
+/test-output
+
+# IDEs
+/.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Nx
+.nx/cache
+.nx/workspace-data
+.nx/polygraph
+.nx/self-healing
+.nx/migrate-runs
+
+# Angular
+.angular
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/worktrees
+vitest.config.*.timestamp*
+.vitest
+
+__screenshots__/
