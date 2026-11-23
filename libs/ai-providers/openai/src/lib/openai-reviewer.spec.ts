@@ -79,6 +79,20 @@ describe('OpenAiReviewer', () => {
     });
   });
 
+  it('distinguishes exhausted credit from rate limiting (both are HTTP 429)', async () => {
+    const quota = new OpenAI.RateLimitError(
+      429,
+      { type: 'insufficient_quota', code: 'credit_balance_exhausted', message: 'no credits' },
+      'no credits',
+      new Headers(),
+    );
+    const { client } = fakeClient(quota);
+    await expect(new OpenAiReviewer({ model: 'gpt-test', client }).review(prompt, signal())).rejects.toMatchObject({
+      kind: 'quota_exceeded',
+      retryable: false,
+    });
+  });
+
   it('maps SDK errors', async () => {
     const headers = new Headers();
     const cases: Array<[Error, string]> = [

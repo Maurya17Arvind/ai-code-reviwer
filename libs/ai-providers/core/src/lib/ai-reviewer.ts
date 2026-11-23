@@ -44,6 +44,8 @@ export interface AiReviewer {
 export type AiProviderErrorKind =
   | 'authentication'
   | 'rate_limited'
+  /** Account has no credit / quota left. Not retryable — needs billing action. */
+  | 'quota_exceeded'
   | 'timeout'
   | 'refusal'
   | 'truncated'

@@ -112,6 +112,26 @@ describe('ClaudeReviewer', () => {
     }
   });
 
+  it('recognises exhausted credit', async () => {
+    const error = new Anthropic.BadRequestError(
+      400,
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'Your credit balance is too low to access the Anthropic API.',
+        },
+      },
+      'Your credit balance is too low to access the Anthropic API.',
+      new Headers(),
+    );
+    const { client } = fakeClient(error);
+    await expect(new ClaudeReviewer({ client }).review(prompt, signal())).rejects.toMatchObject({
+      kind: 'quota_exceeded',
+      retryable: false,
+    });
+  });
+
   it('reports timeouts from the abort signal', async () => {
     const controller = new AbortController();
     controller.abort(new DOMException('timed out', 'TimeoutError'));

@@ -132,6 +132,10 @@ function toProviderError(error: unknown, signal: AbortSignal): AiProviderError {
   if (error instanceof OpenAI.AuthenticationError || error instanceof OpenAI.PermissionDeniedError) {
     return new AiProviderError('gpt', 'authentication', 'OpenAI rejected the credentials (check OPENAI_API_KEY)');
   }
+  // OpenAI uses HTTP 429 for both throttling and exhausted credit; only the error code tells them apart.
+  if (error instanceof OpenAI.APIError && isQuotaError(error)) {
+    return new AiProviderError('gpt', 'quota_exceeded', 'OpenAI account has no credit left (add credits in Billing)');
+  }
   if (error instanceof OpenAI.RateLimitError) {
     return new AiProviderError('gpt', 'rate_limited', 'OpenAI rate limit reached', true);
   }
@@ -145,6 +149,11 @@ function toProviderError(error: unknown, signal: AbortSignal): AiProviderError {
     return new AiProviderError('gpt', 'unknown', `OpenAI API error ${String(error.status)}`);
   }
   return new AiProviderError('gpt', 'unknown', error instanceof Error ? firstLine(error.message) : 'Unknown error');
+}
+
+function isQuotaError(error: InstanceType<typeof OpenAI.APIError>): boolean {
+  const values = [error.code, error.type].map((v) => String(v ?? ''));
+  return values.some((v) => v === 'insufficient_quota' || v === 'credit_balance_exhausted');
 }
 
 function firstLine(text: string): string {

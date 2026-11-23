@@ -145,6 +145,10 @@ function toProviderError(error: unknown, signal: AbortSignal): AiProviderError {
   if (error instanceof Anthropic.RateLimitError) {
     return new AiProviderError('claude', 'rate_limited', 'Claude rate limit reached', true);
   }
+  // Exhausted credit arrives as a 400 invalid_request_error; the message is the only discriminator.
+  if (error instanceof Anthropic.BadRequestError && /credit balance is too low/i.test(error.message)) {
+    return new AiProviderError('claude', 'quota_exceeded', 'Anthropic account has no credit left (Plans & Billing)');
+  }
   if (error instanceof Anthropic.BadRequestError) {
     return new AiProviderError('claude', 'bad_request', `Claude rejected the request: ${firstLine(error.message)}`);
   }
