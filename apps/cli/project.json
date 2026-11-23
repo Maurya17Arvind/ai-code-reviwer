@@ -83,6 +83,13 @@
         ],
         "parallel": false
       }
+    },
+    "integration": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config vitest.integration.config.mts",
+        "cwd": "{projectRoot}"
+      }
     }
   }
 }

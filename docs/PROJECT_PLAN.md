@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 1 complete — awaiting approval for Phase 2.** Last updated: 2026-11-23.
-> Phase 1 results and deviations: see [§6](#6-phase-1-results-2026-11-23).
+> Status: **Phase 2 complete — awaiting approval for Phase 3.** Last updated: 2026-11-23.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23).
 
 ## 1. Phase overview
 
@@ -9,8 +9,8 @@
 | ----- | -------------------------------------------------- | --------------------------- |
 | 0     | Environment and workspace inspection               | ✅ Complete (this document) |
 | 1     | Project foundation                                 | ✅ Complete (2026-11-23)    |
-| 2     | Local Git integration + CLI                        | ⏳ Awaiting approval        |
-| 3     | AI review engine (Claude + GPT, validation, dedup) | Not started                 |
+| 2     | Local Git integration + CLI                        | ✅ Complete (2026-11-23)    |
+| 3     | AI review engine (Claude + GPT, validation, dedup) | ⏳ Awaiting approval        |
 | 4     | GitLab integration                                 | Not started                 |
 | 5     | GitHub App integration                             | Not started                 |
 | 6     | Approval and fix workflow                          | Not started                 |
@@ -184,3 +184,50 @@ and a public tunnel for webhooks during local development (smee.io or cloudflare
 - Windows: Nx generators must be run from Git Bash (or followed by `pnpm install`) — see LOCAL_DEVELOPMENT.md.
 - Remove `patches/nx@24.0.6.patch` and upgrade NestJS to 12 once a stable Nx release supports both.
 - Windows long paths are still disabled on this machine (admin action, optional).
+
+## 7. Phase 2 results (2026-11-23)
+
+Branch: `feature/phase-2-local-git` (based on `feature/phase-1-foundation`).
+
+### 7.1 Roadmap items
+
+| Roadmap item                      | Delivered                                                                                                                                                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Git adapter                 | `@acra/git-providers-local`: read-only `LocalGitProvider` (git CLI via simple-git strict mode, hardened per ADR-020)                                                                                              |
+| Repository and branch information | Root, branch (or detached), HEAD (or none), base-branch detection, masked remote URL                                                                                                                              |
+| Staged and unstaged changes       | `staged`, `unstaged` (± untracked), plus `committed`, `branch` (without checkout) and `all` scopes                                                                                                                |
+| Compare branches                  | merge-base semantics, so later commits on the base branch are not shown as changes                                                                                                                                |
+| Diff parser                       | `parseUnifiedDiff` / `parseHunks`: renames, copies, binary, mode changes, quoted/unicode paths, CRLF, no-EOL-newline, combined diffs skipped, truncated hunks safe                                                |
+| Repository context service        | `buildReviewContext`: exclusions, binary/size checks, merged surrounding-line windows, file/byte budgets, omission reasons, deterministic SHA-256 context hash                                                    |
+| Initial CLI commands              | `ai-review init`, `status`, `changes` (+ `--repo` for multiple repositories), see [CLI.md](./CLI.md)                                                                                                              |
+| Repository configuration          | `ai-review.yaml` schema and loader (strict, approvals cannot be relaxed; ADR-021)                                                                                                                                 |
+| Unit and integration tests        | 137 unit tests pass, 1 skipped (Phase 1: 47) across 14 projects; 43 integration tests (database 6, api 6, worker 2, **local git 19, CLI 10**). The git and CLI suites run against real temporary git repositories |
+
+### 7.2 Verification
+
+- `pnpm check` (lint, typecheck, unit tests, build): all 14 projects pass.
+- `pnpm test:integration`: 43 tests in 5 projects pass. The git and CLI suites need only `git`, not Docker.
+- The built CLI (`node dist/apps/cli/main.js`) was run against this repository: `status` and
+  `changes --base feature/phase-1-foundation` give correct results.
+- Security tests: a hostile `core.fsmonitor` command is never executed, `--base --upload-pack=…` is rejected,
+  path traversal is rejected, and the repository is byte-for-byte unchanged after every read operation.
+
+### 7.3 Deviations and decisions
+
+| Item                                          | Decision                                                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `review` / `findings` / `report` CLI commands | **Deferred to Phase 3.** They need the AI engine. `changes` shows the exact review input instead. No placeholders were registered. |
+| Single `GitProvider` interface                | Split into capability ports (ADR-019). Only the Phase 2 read ports exist.                                                          |
+| `tools/testing`                               | Became Nx project `@acra/testing` so specs can import `TempGitRepo` without relative paths (boundary rule).                        |
+| Review categories                             | All 10 categories from Module D are allowed values (the brief's finding model listed 6). `init` writes all 10.                     |
+| New dependencies                              | simple-git 4.1.0, yaml 2.9.1, picomatch 4.0.7 (+ types). Exact pins, no peer issues.                                               |
+
+### 7.4 Known limitations / follow-ups
+
+- The symlink-escape unit test is skipped on this Windows machine (symlink creation needs Developer Mode). It runs on Linux.
+- Untracked files over the size limit are listed as `too large`. Their content is never read.
+- `diff --cc` (unmerged files during a merge or rebase conflict) is skipped. Resolve conflicts before reviewing.
+- Nx flagged `database:prisma-generate` as flaky once (a single failure right after `nx reset`). Four consecutive
+  reruns passed, so the cause was not reproduced.
+- The CLI build resolves third-party packages from the workspace `node_modules`. A standalone distributable
+  (bundled dependencies, `bin` entry) is planned for Phase 8.

@@ -31,6 +31,24 @@
 | Queue payload validation on producer and consumer                                           | `@acra/queue`, `SystemProcessor`        |
 | Module boundaries: browser and CLI cannot import server infrastructure                      | ESLint `enforce-module-boundaries`      |
 
+## 2a. Controls implemented in Phase 2 (local Git + CLI)
+
+| Control                                                                                                                                                          | Where                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Git spawned without a shell; simple-git strict mode blocks command-executing options and strips `GIT_*`/pager env vars                                           | `LocalGitProvider` (ADR-020)                     |
+| Hostile repository config neutralised: `core.fsmonitor=false`, `--no-ext-diff`, `--no-textconv`, pinned prefixes/quoting/relative settings                       | `LocalGitProvider`                               |
+| Git ref validation: blocks option injection (`--upload-pack=…`), ranges, reflog/blob selectors                                                                   | `assertSafeGitRef` (`@acra/security`)            |
+| Path safety: no absolute paths or `..`; symlinks must resolve inside the repository                                                                              | `normalizeRepoRelativePath`, `resolveInsideRepo` |
+| Resource limits: 1 MB per file read, 50 MB per diff, 30 s per git process, context budgets (files, bytes)                                                        | `LocalGitProvider`, `buildReviewContext`         |
+| Binary sniffing; binary files are never loaded into the review context                                                                                           | `LocalGitProvider`, `buildReviewContext`         |
+| Credentials in `origin` URLs are masked before output                                                                                                            | `getRepositoryInfo`                              |
+| `ai-review.yaml` treated as untrusted: strict schema, enum-only prompt-bound values, size and alias limits, approvals cannot be relaxed, merge cannot be enabled | `@acra/configuration` (ADR-021)                  |
+| Read-only CLI: no command that stages, commits, pushes or merges; `init` writes only `ai-review.yaml` (`wx`, no overwrite without `--force`)                     | `apps/cli`                                       |
+
+Verified by integration tests against real git, including a hostile `core.fsmonitor` command that must never run,
+option injection through `--base`, path traversal, and "repository unchanged after every operation".
+The symlink-escape test is skipped on Windows machines without Developer Mode (symlink creation needs it) and runs on Linux CI.
+
 ### Development-only relaxations (must not reach production)
 
 - `acra_app` has `CREATEDB` so `prisma migrate dev` can create a shadow database. Production roles: no `CREATEDB`; migrations via `migrate deploy`.
@@ -40,7 +58,7 @@
 
 | Control                                                                                                                 | Phase |
 | ----------------------------------------------------------------------------------------------------------------------- | ----- |
-| Path-traversal-safe file access, bounded context extraction, exclude globs, secret scrubbing before AI calls            | 2–3   |
+| Secret scrubbing of the review context before AI calls (path safety, exclusions and budgets are done in Phase 2)        | 3     |
 | Prompt-injection defences (data/instruction separation, output schema enforcement, no tool execution from model output) | 3     |
 | Webhook signature verification (GitHub `X-Hub-Signature-256`, GitLab token), replay protection                          | 4–5   |
 | SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks)            | 4     |

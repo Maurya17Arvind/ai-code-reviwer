@@ -4,8 +4,8 @@ A standalone, multi-tenant code review platform. Claude and GPT independently re
 repositories, GitLab merge requests and GitHub pull requests. A deterministic validation layer decides what gets
 published, and every code or Git change requires human approval. Merging is never automated.
 
-> **Status: Phase 1 (foundation) complete.** The workspace, apps, database, queue and quality gates are in place.
-> Review features start in Phase 2. See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
+> **Status: Phase 2 (local Git + CLI) complete.** The foundation, read-only local Git adapter, diff parser, review-context builder and `ai-review init | status | changes` are in place.
+> AI review (Claude + GPT) starts in Phase 3. See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) and [docs/CLI.md](docs/CLI.md).
 
 ## Stack
 
@@ -19,7 +19,7 @@ apps/
   api/          NestJS HTTP API (health, error envelope, security headers)
   worker/       NestJS BullMQ worker (no HTTP)
   dashboard/    Angular 22 dashboard
-  cli/          `ai-review` command-line tool
+  cli/          `ai-review` command-line tool (init, status, changes)
 libs/
   shared/types        domain enums (browser-safe)
   shared/contracts    API contracts (browser-safe)
@@ -27,6 +27,9 @@ libs/
   security            redaction utilities
   database            Prisma schema, migrations, client
   queue               queue registry, job schemas, producer
+  git-providers/core  provider ports and diff model
+  git-providers/local read-only local Git adapter
+  repository-context  diff parser and review-context builder
 infrastructure/       Docker init scripts
 tools/testing/        integration-test configuration
 docs/                 architecture, ADRs, design docs
@@ -51,6 +54,7 @@ Full instructions: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 
 | Document                                          | Contents                                                        |
 | ------------------------------------------------- | --------------------------------------------------------------- |
+| [CLI.md](docs/CLI.md)                             | `ai-review` commands, scopes and exit codes                     |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)           | System design, module boundaries, conventions, version baseline |
 | [adr/](docs/adr/README.md)                        | Architecture decision records                                   |
 | [DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)     | Schema conventions, implemented and target model                |

@@ -23,17 +23,17 @@ Copy-Item .env.example .env      # then replace every change-me value with long 
 pnpm infra:up                    # PostgreSQL 18.7 + Redis 8.10 (waits until healthy)
 pnpm db:migrate                  # apply migrations
 pnpm check                       # lint + typecheck + unit tests + build (all projects)
-pnpm test:integration            # integration tests against the local containers
+pnpm test:integration            # containers (db/api/worker) + real temp git repos (git/cli)
 ```
 
 ## 3. Running the apps
 
-| Command                                                  | What                                        | URL                                    |
-| -------------------------------------------------------- | ------------------------------------------- | -------------------------------------- |
-| `pnpm dev:api`                                           | NestJS API (watch)                          | http://127.0.0.1:3000/api/health/ready |
-| `pnpm dev:worker`                                        | BullMQ worker (watch)                       | —                                      |
-| `pnpm dev:dashboard`                                     | Angular dev server; `/api` proxied to :3000 | http://localhost:4300                  |
-| `pnpm nx build cli && node dist/apps/cli/main.js --help` | CLI                                         | —                                      |
+| Command                                                   | What                                        | URL                                    |
+| --------------------------------------------------------- | ------------------------------------------- | -------------------------------------- |
+| `pnpm dev:api`                                            | NestJS API (watch)                          | http://127.0.0.1:3000/api/health/ready |
+| `pnpm dev:worker`                                         | BullMQ worker (watch)                       | —                                      |
+| `pnpm dev:dashboard`                                      | Angular dev server; `/api` proxied to :3000 | http://localhost:4300                  |
+| `pnpm nx build cli && node dist/apps/cli/main.js changes` | CLI (see CLI.md)                            | —                                      |
 
 The dashboard runs on **4300** (4200 is commonly taken on this machine).
 

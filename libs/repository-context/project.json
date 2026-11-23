@@ -1,0 +1,20 @@
+{
+  "name": "repository-context",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/repository-context/src",
+  "projectType": "library",
+  "tags": ["scope:node", "type:domain"],
+  "// targets": "to see all targets run: nx show project repository-context --web",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "tsc --noEmit -p {projectRoot}/tsconfig.lib.json",
+          "tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

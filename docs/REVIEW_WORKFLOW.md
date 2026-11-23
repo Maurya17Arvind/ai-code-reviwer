@@ -21,3 +21,11 @@ RECEIVE_REQUEST → IDENTIFY_REPOSITORY → FETCH_COMMIT_AND_DIFF → BUILD_REPO
 - Idempotency keys for webhook deliveries and every job; a new head SHA supersedes the running session.
 
 To be documented in Phase 3: state schema, node contracts, validation rules, fingerprint algorithm, confidence model, prompt structure and egress payload.
+
+## Building blocks already implemented (Phase 2)
+
+- `FETCH_COMMIT_AND_DIFF` (local): `LocalGitProvider.getChangeSet(scope)` with all five scopes.
+- `BUILD_REPOSITORY_CONTEXT`: `buildReviewContext` in `@acra/repository-context`. Includes exclusions, budgets,
+  surrounding-line snippets, omission reasons and the deterministic `contextHash` that will key the
+  byte-identical snapshot both models receive.
+- Preview of this input: `ai-review changes --format json`.

@@ -36,7 +36,7 @@ mutation needs explicit human approval, and merging is never performed.
 | `apps/api`       | NestJS 11 + Express 5                        | HTTP API, auth, webhook intake, approval endpoints, enqueuing jobs  | Run AI reviews inline              | Health probes, error envelope, helmet, CORS allowlist, request IDs, pino logging |
 | `apps/worker`    | NestJS 11 application context (no HTTP)      | Consume BullMQ queues: reviews, publishing, fixes, approved Git ops | Expose HTTP                        | Consumes `system` queue (`heartbeat` job)                                        |
 | `apps/dashboard` | Angular 22.3 (standalone, zoneless, signals) | UI for orgs, repos, reviews, findings, approvals, analytics, audit  | Import server code or see secrets  | Shell, lazy routes, System status page                                           |
-| `apps/cli`       | Node + commander                             | `ai-review` local review, reports, findings                         | Modify, stage, commit or push code | `--help` / `--version` only                                                      |
+| `apps/cli`       | Node + commander                             | `ai-review` local review, reports, findings                         | Modify, stage, commit or push code | `init`, `status`, `changes` (Phase 2) — see [CLI.md](./CLI.md)                   |
 
 API and worker are separate processes (ADR-009). Webhook intake stays fast, review throughput scales on
 its own, and a crashing job cannot take the API down.
@@ -48,19 +48,25 @@ libs/
 ├── shared/
 │   ├── types/            ✅ Domain enums (zod/mini), browser-safe
 │   └── contracts/        ✅ API DTO schemas (zod/mini) — health, error envelope
-├── configuration/        ✅ Env schemas (Zod), fail-fast loader, logger options
-├── security/             ✅ Log redaction paths, URL credential masking
+├── configuration/        ✅ Env schemas, fail-fast loader, logger options, ai-review.yaml schema + loader
+├── security/             ✅ Log redaction, URL masking, git ref validation, repo-path safety
 ├── database/             ✅ Prisma 7 schema + migrations, client factory, Nest module, health probe
 ├── queue/                ✅ Queue/job registry, Zod job schemas, Redis options, producer, health probe
+├── git-providers/
+│   ├── core/             ✅ Phase 2 — provider ports (RepositoryReader), diff model, errors
+│   ├── local/            ✅ Phase 2 — read-only LocalGitProvider (git CLI via simple-git, hardened)
+│   ├── gitlab/           ⏳ Phase 4
+│   └── github/           ⏳ Phase 5
+├── repository-context/   ✅ Phase 2 — unified-diff parser, path filter, review context builder, context hash
 │
 ├── agent-core/           ⏳ Phase 3 — LangGraph StateGraph, node contracts, run tracing
 ├── review-engine/        ⏳ Phase 3 — analyzers, reviewers, aggregator, validators, dedup, lifecycle
-├── repository-context/   ⏳ Phase 2 — diff parsing, hunk mapping, context extraction
 ├── ai-providers/{core,claude,openai}        ⏳ Phase 3
-├── git-providers/{core,local,gitlab,github} ⏳ Phases 2, 4, 5
 ├── publishing/           ⏳ Phase 4
 ├── approvals/            ⏳ Phase 6
 └── fix-engine/           ⏳ Phase 6
+
+tools/testing/            ✅ `@acra/testing` — integration-test config + TempGitRepo (test-only)
 ```
 
 Libraries are created in the phase that first needs them, to avoid empty abstractions.
@@ -69,13 +75,13 @@ Libraries are created in the phase that first needs them, to avoid empty abstrac
 
 Every project carries one `scope:*` and one `type:*` tag (see root `eslint.config.mjs`).
 
-| Scope tag         | Meaning                                                                    | May depend on                                                              |
-| ----------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `scope:shared`    | Browser-safe (shared/types, shared/contracts)                              | `scope:shared`                                                             |
-| `scope:node`      | Node-only utilities usable by server **and** CLI (configuration, security) | `scope:shared`, `scope:node`                                               |
-| `scope:server`    | Server infrastructure (database, queue, api, worker)                       | `scope:shared`, `scope:node`, `scope:server`                               |
-| `scope:dashboard` | Angular app                                                                | `scope:shared` only. No server code reaches the browser                    |
-| `scope:cli`       | Local CLI                                                                  | `scope:shared`, `scope:node`, `scope:cli`. **Never** the database or queue |
+| Scope tag         | Meaning                                                                                             | May depend on                                                              |
+| ----------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `scope:shared`    | Browser-safe (shared/types, shared/contracts)                                                       | `scope:shared`                                                             |
+| `scope:node`      | Node code usable by server **and** CLI (configuration, security, git-providers, repository-context) | `scope:shared`, `scope:node`                                               |
+| `scope:server`    | Server infrastructure (database, queue, api, worker)                                                | `scope:shared`, `scope:node`, `scope:server`                               |
+| `scope:dashboard` | Angular app                                                                                         | `scope:shared` only. No server code reaches the browser                    |
+| `scope:cli`       | Local CLI                                                                                           | `scope:shared`, `scope:node`, `scope:cli`. **Never** the database or queue |
 
 | Type tag       | May depend on                                           |
 | -------------- | ------------------------------------------------------- |
@@ -99,7 +105,9 @@ the dashboard or the CLI is a lint error.
    internals. `queue` keeps job payloads typed and validated on both sides.
 4. **`scope:node` added** so the CLI can share configuration and security utilities without access
    to server infrastructure.
-5. **`tools/testing/`** holds shared integration-test configuration. It is not an Nx project.
+5. **`tools/testing/`** (`@acra/testing`) holds shared integration-test configuration and the `TempGitRepo`
+   helper. It is an Nx project only so that specs can import it without relative paths (module boundaries).
+6. **The single `GitProvider` interface is split by capability** (ADR-019). See §6.
 
 ## 5. Cross-cutting conventions (implemented)
 
@@ -113,9 +121,44 @@ the dashboard or the CLI is a lint error.
 | Queues               | Job names and payload schemas live in `@acra/queue`. Producers validate before enqueue, and consumers re-validate (Redis content is untrusted). Malformed jobs fail with `UnrecoverableError`. `jobId` gives idempotency. Producer connections fail fast, worker connections block. |
 | Database             | UUIDv7 keys, snake_case tables, `timestamptz(3)`, `organization_id` on tenant-owned tables, soft delete where user-facing, DB-enforced append-only `audit_logs`. The app connects as a non-superuser role.                                                                          |
 | Browser bundles      | Browser-safe libraries use `zod/mini` with `import * as z` (tree-shakable). The System status chunk is 27 kB raw.                                                                                                                                                                   |
-| Testing              | Vitest everywhere. Unit tests run without infrastructure (`nx run-many -t test`). `*.integration.spec.ts` runs against Docker Compose services (`pnpm test:integration`). External AI/Git APIs are never called in automated tests.                                                 |
+| Testing              | Vitest everywhere. Unit tests run without infrastructure (`nx run-many -t test`). `*.integration.spec.ts` runs against Docker Compose services or real temporary git repositories (`pnpm test:integration`). External AI/Git APIs are never called in automated tests.              |
 
-## 6. Review pipeline (summary; detailed in `REVIEW_WORKFLOW.md`, Phase 3)
+## 6. Git provider abstraction (Phase 2)
+
+The brief's single `GitProvider` interface is split into capability ports in `@acra/git-providers-core` (ADR-019):
+
+| Port                                      | Capability                                                                 | Implemented by                       |
+| ----------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
+| `FileContentReader`                       | `readFile(path, revision)`. The narrow port that domain services depend on | Local ✅, GitLab/GitHub (Phases 4–5) |
+| `RepositoryReader`                        | + `getRepositoryInfo()`, `getChangeSet(scope)`, `getCommitDetails(ref)`    | Local ✅, GitLab/GitHub (Phases 4–5) |
+| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab/GitHub (Phases 4–5)           |
+| `RepositoryWriter`                        | Branch, push, create MR/PR. **Approval-gated**                             | Phase 6                              |
+
+The provider-neutral diff model (`ChangedFile → DiffHunk → DiffLine` with old/new line numbers) is produced by
+the parser in `@acra/repository-context` from local `git diff` output, and later from GitLab/GitHub diffs (`parseHunks`).
+
+`ChangeScope` covers `staged`, `unstaged` (± untracked), `committed` (merge-base(base, HEAD)..HEAD),
+`branch` (merge-base(base, head)..head, without checkout) and `all` (merge-base vs working tree ± untracked).
+Diff ranges are always built by the provider from validated refs, never taken from input.
+
+`buildReviewContext(changeSet, reader, { exclude, budget })` turns a change set into the bounded review input:
+
+- files in path order;
+- built-in plus `ai-review.yaml` exclusions;
+- binary and size checks;
+- merged surrounding-line windows per hunk;
+- file-count and total-byte budgets, with every omitted file listed along with its reason;
+- a SHA-256 `contextHash` over the canonical serialisation.
+
+The same repository state always yields the same hash, which Phase 3 uses to prove that all reviewers saw
+identical input.
+
+**Local git safety (ADR-020).** `LocalGitProvider` is read-only. It spawns git without a shell (simple-git, strict
+mode, `GIT_*` environment stripped) and forces `core.fsmonitor=false`, pinned diff prefixes and quoting, and
+`--no-ext-diff --no-textconv`. It validates refs (`assertSafeGitRef`) and resolves paths inside the repository,
+including symlink targets (`resolveInsideRepo`). File reads are size-limited and binary-sniffed.
+
+## 7. Review pipeline (summary; detailed in `REVIEW_WORKFLOW.md`, Phase 3)
 
 `RECEIVE_REQUEST → IDENTIFY_REPOSITORY → FETCH_COMMIT_AND_DIFF → BUILD_REPOSITORY_CONTEXT →
 ANALYZE_CHANGED_FILES → RUN_STATIC_ANALYSIS → PARALLEL_AI_REVIEW (Claude ‖ GPT) →
@@ -130,45 +173,46 @@ Invariants:
 - Findings that can't be mapped to a diff line go to the summary. We never invent an inline position.
 - Webhook deliveries and jobs use idempotency keys.
 
-## 7. Security model (summary; detailed in [`SECURITY.md`](./SECURITY.md))
+## 8. Security model (summary; detailed in [`SECURITY.md`](./SECURITY.md))
 
 - Repository content, diffs, commit messages, PR/MR text, comments and AI output are **untrusted data**.
 - Privileged operations run only from an approved, SHA-bound, expiring `ApprovalRequest`. Merge is not implemented.
 - Webhook signature verification, SSRF guards, sandboxed fix execution and envelope-encrypted credentials
   come in the phases that introduce those features.
 
-## 8. Execution modes and data egress
+## 9. Execution modes and data egress
 
 | Mode            | Where the review runs       | What leaves the machine                                                                                                                                     |
 | --------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local / private | Developer's machine via CLI | Diff plus bounded context, sent directly to the configured AI provider(s) with the developer's keys. Nothing goes to our server unless explicitly uploaded. |
 | Server          | Worker                      | Diff plus bounded context (after redaction and exclude filters) sent to Anthropic/OpenAI. Metadata and findings are stored in PostgreSQL.                   |
 
-## 9. Version baseline (verified 2026-11-23 against npm registry metadata; all pinned exactly)
+## 10. Version baseline (verified 2026-11-23 against npm registry metadata; all pinned exactly)
 
-| Component                                   | Version                                                        | Notes                                                              |
-| ------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Node.js                                     | 24.15.0 (`.nvmrc`)                                             | Angular 22.3 engines `^22.22.3 \|\| ^24.15.0 \|\| >=26`            |
-| pnpm                                        | 10.32.1                                                        | `packageManager` field; strict peers; `engine-strict`              |
-| TypeScript                                  | 6.0.3                                                          | Angular requires `>=6.0 <6.1`; TS 7 not used (ADR-003)             |
-| Angular                                     | 22.3.0 (core, common, router, forms, build, cli, compiler-cli) | Zoneless, esbuild application builder                              |
-| Nx + plugins                                | 24.0.6                                                         | One-line pnpm patch for Angular 22.3 compatibility (ADR-015)       |
-| NestJS                                      | **11.2.11**                                                    | Not 12.x: `@nx/nest@24.0.6` peer `@nestjs/* >=10 <12` (ADR-014)    |
-| Express                                     | 5.2.1                                                          | via `@nestjs/platform-express`                                     |
-| Prisma                                      | 7.10.1 (+ `@prisma/adapter-pg`, `pg` 8.23.1)                   | Stable; npm `latest` tag points at an 8.0 RC (ADR-006)             |
-| PostgreSQL                                  | 18.7 (`postgres:18.7-alpine`)                                  | ADR-007                                                            |
-| Redis                                       | 8.10.3 (`redis:8.10.3-alpine`)                                 | ADR-008                                                            |
-| BullMQ / @nestjs/bullmq / ioredis           | 6.7.8 / 12.0.2 / 6.0.0                                         | `@nestjs/bullmq` peer `@nestjs/core ^10\|\|^11\|\|^12`             |
-| Zod                                         | 4.6.7                                                          | `zod` on server, `zod/mini` in browser-safe libs                   |
-| pino / nestjs-pino / pino-http              | 10.4.0 / 5.3.2 / 11.0.0                                        |                                                                    |
-| helmet                                      | 8.3.0                                                          |                                                                    |
-| commander                                   | 15.1.0                                                         | CLI                                                                |
-| Vitest / Vite                               | 5.0.5 / 8.3.8                                                  | Accepted by `@angular/build@22.3.0` (`^4.0.8 \|\| ^5.0.0`)         |
-| ESLint / typescript-eslint / angular-eslint | 10.15.0 / 8.73.0 / 22.8.0                                      | Flat config                                                        |
-| Prettier                                    | 3.10.1                                                         | Angular parser for templates                                       |
-| React (dev only)                            | 19.3.1                                                         | Peer of Prisma Studio (`@prisma/studio-core`); not used by any app |
-| LangGraph, Anthropic SDK, OpenAI SDK        | 1.7.5, 1.12.0, 7.62.0                                          | **Not installed yet** — Phase 3                                    |
-| simple-git / gitbeaker / Octokit            | 4.1.0 / 44.1.10 / 16.x                                         | **Not installed yet** — Phases 2, 4, 5                             |
+| Component                                   | Version                                                        | Notes                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Node.js                                     | 24.15.0 (`.nvmrc`)                                             | Angular 22.3 engines `^22.22.3 \|\| ^24.15.0 \|\| >=26`                   |
+| pnpm                                        | 10.32.1                                                        | `packageManager` field; strict peers; `engine-strict`                     |
+| TypeScript                                  | 6.0.3                                                          | Angular requires `>=6.0 <6.1`; TS 7 not used (ADR-003)                    |
+| Angular                                     | 22.3.0 (core, common, router, forms, build, cli, compiler-cli) | Zoneless, esbuild application builder                                     |
+| Nx + plugins                                | 24.0.6                                                         | One-line pnpm patch for Angular 22.3 compatibility (ADR-015)              |
+| NestJS                                      | **11.2.11**                                                    | Not 12.x: `@nx/nest@24.0.6` peer `@nestjs/* >=10 <12` (ADR-014)           |
+| Express                                     | 5.2.1                                                          | via `@nestjs/platform-express`                                            |
+| Prisma                                      | 7.10.1 (+ `@prisma/adapter-pg`, `pg` 8.23.1)                   | Stable; npm `latest` tag points at an 8.0 RC (ADR-006)                    |
+| PostgreSQL                                  | 18.7 (`postgres:18.7-alpine`)                                  | ADR-007                                                                   |
+| Redis                                       | 8.10.3 (`redis:8.10.3-alpine`)                                 | ADR-008                                                                   |
+| BullMQ / @nestjs/bullmq / ioredis           | 6.7.8 / 12.0.2 / 6.0.0                                         | `@nestjs/bullmq` peer `@nestjs/core ^10\|\|^11\|\|^12`                    |
+| Zod                                         | 4.6.7                                                          | `zod` on server, `zod/mini` in browser-safe libs                          |
+| pino / nestjs-pino / pino-http              | 10.4.0 / 5.3.2 / 11.0.0                                        |                                                                           |
+| helmet                                      | 8.3.0                                                          |                                                                           |
+| commander                                   | 15.1.0                                                         | CLI                                                                       |
+| Vitest / Vite                               | 5.0.5 / 8.3.8                                                  | Accepted by `@angular/build@22.3.0` (`^4.0.8 \|\| ^5.0.0`)                |
+| ESLint / typescript-eslint / angular-eslint | 10.15.0 / 8.73.0 / 22.8.0                                      | Flat config                                                               |
+| Prettier                                    | 3.10.1                                                         | Angular parser for templates                                              |
+| React (dev only)                            | 19.3.1                                                         | Peer of Prisma Studio (`@prisma/studio-core`); not used by any app        |
+| LangGraph, Anthropic SDK, OpenAI SDK        | 1.7.5, 1.12.0, 7.62.0                                          | **Not installed yet** — Phase 3                                           |
+| simple-git / yaml / picomatch               | 4.1.0 / 2.9.1 / 4.0.7                                          | Phase 2: local git (strict mode), ai-review.yaml parsing, exclusion globs |
+| gitbeaker / Octokit                         | 44.1.10 / 16.x                                                 | **Not installed yet** — Phases 4, 5                                       |
 
 ### Known compatibility items
 

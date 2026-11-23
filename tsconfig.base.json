@@ -26,7 +26,11 @@
       "@acra/configuration": ["./libs/configuration/src/index.ts"],
       "@acra/security": ["./libs/security/src/index.ts"],
       "@acra/database": ["./libs/database/src/index.ts"],
-      "@acra/queue": ["./libs/queue/src/index.ts"]
+      "@acra/queue": ["./libs/queue/src/index.ts"],
+      "@acra/git-providers-core": ["./libs/git-providers/core/src/index.ts"],
+      "@acra/git-providers-local": ["./libs/git-providers/local/src/index.ts"],
+      "@acra/repository-context": ["./libs/repository-context/src/index.ts"],
+      "@acra/testing": ["./tools/testing/index.ts"]
     },
     "exactOptionalPropertyTypes": true
   },
