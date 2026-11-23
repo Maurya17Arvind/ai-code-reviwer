@@ -1,8 +1,10 @@
 import { type DynamicModule, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { type CreatePrismaClientOptions, createPrismaClient, PrismaClient } from './prisma-client';
+import { ConnectionStore } from './stores/connection-store';
+import { ReviewStore } from './stores/review-store';
+import { PRISMA_CLIENT } from './tokens';
 
-/** Injection token for the process-wide Prisma client. */
-export const PRISMA_CLIENT = Symbol('PRISMA_CLIENT');
+export { PRISMA_CLIENT };
 
 /** Lightweight connectivity probe used by readiness checks. */
 @Injectable()
@@ -33,8 +35,10 @@ export class DatabaseModule {
         { provide: PRISMA_CLIENT, useFactory: () => createPrismaClient(options) },
         DatabaseHealth,
         PrismaLifecycle,
+        ReviewStore,
+        ConnectionStore,
       ],
-      exports: [PRISMA_CLIENT, DatabaseHealth],
+      exports: [PRISMA_CLIENT, DatabaseHealth, ReviewStore, ConnectionStore],
     };
   }
 }

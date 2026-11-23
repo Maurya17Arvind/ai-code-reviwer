@@ -39,6 +39,22 @@ organizations 1───* organization_members *───1 users
 Verified by `libs/database/src/lib/database.integration.spec.ts` (relations, unique membership, CHECK constraints,
 append-only trigger, non-superuser connection).
 
+## 2b. Implemented in Phase 4 (`phase4_reviews_gitlab`)
+
+| Table                  | Key columns                                                                                                                                                                                     | Constraints / indexes                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `provider_connections` | `organization_id`, `provider`, `name`, `base_url`, `encrypted_token` (envelope, AAD = connection id), `token_key_id`                                                                            | unique `(organization_id, provider, name)`           |
+| `repositories` (+)     | `connection_id`, `webhook_secret_hash` (SHA-256), `webhook_id`                                                                                                                                  | FK to connection                                     |
+| `review_sessions`      | `repository_id`, `request_id`, `base_sha`, `head_sha`, `context_hash`, `prompt_hash`, `status` (QUEUED/RUNNING/COMPLETED/PARTIAL/FAILED/SUPERSEDED/SKIPPED), `report` jsonb, error code/message | unique `idempotency_key` (provider:repo:MR:head SHA) |
+| `model_executions`     | provider, model, served model, status, error kind, tokens, `cost_micros`, latency                                                                                                               | CHECK status                                         |
+| `review_findings`      | lifecycle per `(repository_id, request_id, fingerprint)`, `status` (NEW…FALSE_POSITIVE), `first_seen_sha`, `last_seen_sha`, `sources[]`, `placement`                                            | unique triple; CHECK severity/placement/confidence   |
+| `review_comments`      | provider discussion/note ids, kind INLINE/SUMMARY, finding                                                                                                                                      | FKs to session and finding                           |
+| `webhook_deliveries`   | `provider`, `delivery_id`, event, status ACCEPTED/IGNORED/REJECTED, reason                                                                                                                      | unique `(provider, delivery_id)` (replay protection) |
+
+Tenant-scoped access goes through `ReviewStore` / `ConnectionStore`. Their methods take a `TenantContext` and
+filter by `organization_id` (ADR-010). The webhook path resolves the repository by id first, as the trust
+anchor, then switches to tenant scope.
+
 ## 3. Target model (added in the phase that uses it)
 
 > Review tables moved from Phase 3 to Phase 4 (ADR-025): in Phase 3 only the local CLI runs reviews, and it stores

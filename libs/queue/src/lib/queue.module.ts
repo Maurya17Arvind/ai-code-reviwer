@@ -2,7 +2,16 @@ import { BullModule, InjectQueue } from '@nestjs/bullmq';
 import { type DynamicModule, Injectable, Module } from '@nestjs/common';
 import { type Queue } from 'bullmq';
 import { randomUUID } from 'node:crypto';
-import { type HeartbeatJob, HeartbeatJobSchema, QueueName, SystemJobName } from './queues';
+import {
+  type HeartbeatJob,
+  HeartbeatJobSchema,
+  QueueName,
+  ReviewJobName,
+  type ReviewMergeRequestJob,
+  ReviewMergeRequestJobSchema,
+  reviewJobId,
+  SystemJobName,
+} from './queues';
 import { createRedisConnectionOptions } from './redis-connection';
 
 /** Default retention: keep enough history to debug, without unbounded Redis growth. */
@@ -27,6 +36,24 @@ export class SystemQueueProducer {
     // jobId = correlationId makes enqueueing idempotent: re-adding the same id is a no-op.
     await this.queue.add(SystemJobName.Heartbeat, payload, { jobId: payload.correlationId });
     return payload;
+  }
+}
+
+/** Enqueues review jobs. The job id makes enqueueing idempotent per (repository, MR, head SHA). */
+@Injectable()
+export class ReviewQueueProducer {
+  constructor(@InjectQueue(QueueName.Reviews) private readonly queue: Queue) {}
+
+  async enqueueMergeRequestReview(input: ReviewMergeRequestJob): Promise<{ jobId: string }> {
+    const payload = ReviewMergeRequestJobSchema.parse(input);
+    const jobId = reviewJobId(payload);
+    await this.queue.add(ReviewJobName.MergeRequest, payload, {
+      jobId,
+      attempts: 3,
+      // Reviews are long-running and providers recover slowly: back off generously.
+      backoff: { type: 'exponential', delay: 30_000 },
+    });
+    return { jobId };
   }
 }
 
@@ -65,10 +92,10 @@ export class QueueModule {
           connection: createRedisConnectionOptions(options.redisUrl, options.role),
           defaultJobOptions: DEFAULT_JOB_OPTIONS,
         }),
-        BullModule.registerQueue({ name: QueueName.System }),
+        BullModule.registerQueue({ name: QueueName.System }, { name: QueueName.Reviews }),
       ],
-      providers: [SystemQueueProducer, QueueHealth],
-      exports: [BullModule, SystemQueueProducer, QueueHealth],
+      providers: [SystemQueueProducer, ReviewQueueProducer, QueueHealth],
+      exports: [BullModule, SystemQueueProducer, ReviewQueueProducer, QueueHealth],
     };
   }
 }

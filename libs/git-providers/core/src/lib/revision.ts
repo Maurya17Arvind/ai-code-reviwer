@@ -26,5 +26,7 @@ export function describeScope(scope: ChangeScope): string {
       return `commits on ${scope.head} not in ${scope.base}`;
     case 'all':
       return `all changes not in ${scope.base} (committed + staged + unstaged${scope.includeUntracked ? ' + untracked' : ''})`;
+    case 'merge_request':
+      return scope.provider === 'gitlab' ? `merge request !${scope.id}` : `pull request #${scope.id}`;
   }
 }

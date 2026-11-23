@@ -9,7 +9,7 @@ import { ReviewReportSchema } from '@acra/review-engine';
 import { TempGitRepo } from '@acra/testing';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { type ReviewerFactory } from './core/reviewers';
+import { type ReviewerFactory } from '@acra/ai-providers-factory';
 import { runCli } from './testing/run-cli';
 
 /** Fake AI reviewer: records prompts, returns a scripted answer. No network. */

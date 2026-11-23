@@ -1,4 +1,5 @@
-import { loadEnv, WorkerEnvSchema } from '@acra/configuration';
+import { loadEnv } from '@acra/configuration';
+import { WorkerConfigSchema } from './worker-config';
 import { createRedisConnectionOptions, HeartbeatResultSchema, QueueName, SystemQueueProducer } from '@acra/queue';
 import { type INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -15,7 +16,7 @@ describe('worker (integration)', () => {
   let inspectionQueue: Queue;
 
   beforeAll(async () => {
-    const config = loadEnv(WorkerEnvSchema);
+    const config = loadEnv(WorkerConfigSchema);
     worker = await NestFactory.createApplicationContext(WorkerModule.forRoot(config), { bufferLogs: true });
     await worker.init();
     const connection = createRedisConnectionOptions(config.REDIS_URL, 'worker');

@@ -44,4 +44,6 @@ export interface ChangedFile {
   readonly oldMode?: string;
   readonly newMode?: string;
   readonly hunks: readonly DiffHunk[];
+  /** The provider did not return a diff (too large / collapsed). The file is listed but never reviewed. */
+  readonly diffUnavailable?: boolean;
 }

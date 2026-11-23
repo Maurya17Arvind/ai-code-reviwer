@@ -1,5 +1,5 @@
 import { AiEnvSchema, loadEnv } from '@acra/configuration';
-import { createReviewers } from './reviewers';
+import { createReviewers } from './create-reviewers';
 
 describe('createReviewers (real factory, no network)', () => {
   const originalKey = process.env['ANTHROPIC_API_KEY'];
@@ -44,7 +44,7 @@ describe('createReviewers (real factory, no network)', () => {
 
 describe('Ollama wiring', () => {
   it('builds the local reviewer only when a model is configured, marking it as on-machine', async () => {
-    const { isLoopbackHost } = await import('./reviewers');
+    const { isLoopbackHost } = await import('./create-reviewers');
     const skipped = createReviewers(loadEnv(AiEnvSchema, {}), new Set(['ollama']));
     expect(skipped.reviewers).toHaveLength(0);
     expect(skipped.skipped[0]).toMatchObject({ provider: 'ollama', reason: 'OLLAMA_REVIEW_MODEL is not set' });

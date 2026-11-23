@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 3 complete — awaiting approval for Phase 4.** Last updated: 2026-11-23.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23).
+> Status: **Phase 4 complete — awaiting approval for Phase 5.** Last updated: 2026-11-23.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23).
 
 ## 1. Phase overview
 
@@ -11,8 +11,8 @@
 | 1     | Project foundation                                 | ✅ Complete (2026-11-23)    |
 | 2     | Local Git integration + CLI                        | ✅ Complete (2026-11-23)    |
 | 3     | AI review engine (Claude + GPT, validation, dedup) | ✅ Complete (2026-11-23)    |
-| 4     | GitLab integration                                 | ⏳ Awaiting approval        |
-| 5     | GitHub App integration                             | Not started                 |
+| 4     | GitLab integration                                 | ✅ Complete (2026-11-23)    |
+| 5     | GitHub App integration                             | ⏳ Awaiting approval        |
 | 6     | Approval and fix workflow                          | Not started                 |
 | 7     | Angular dashboard (feature build-out)              | Not started                 |
 | 8     | Production readiness                               | Not started                 |
@@ -286,3 +286,71 @@ Branch: `feature/phase-3-ai-review-engine` (based on `feature/phase-2-local-git`
 - Custom repository rules (free text in `ai-review.yaml`) are not supported yet. They need an injection-resistant design.
 - Claude cost estimates use the serving model's list price for the whole turn. When a fallback ran, the actual bill
   may differ slightly.
+
+## 9. Phase 4 results (2026-11-23)
+
+Branch: `feature/phase-4-gitlab` (based on `feature/phase-3-ai-review-engine`).
+
+### 9.1 Roadmap items
+
+| Roadmap item             | Delivered                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configure authentication | Project/bot access token (api scope), envelope-encrypted per connection (ADR-011); per-repository webhook secrets stored as SHA-256                                                               |
+| Connect repositories     | Operator command `admin.js connect-gitlab`: SSRF-validated host, access check, encrypted connection, repository upsert, hook registration (or manual), audit. Idempotent, rotates the hook secret |
+| Webhook processing       | `POST /api/webhooks/gitlab/:repositoryId`: token hash, project id match, event/action filter, replay protection, 2 MB body, enqueue only (ADR-028)                                                |
+| Fetch MR changes         | `GitLabProvider`: MR + diff_refs, paginated `/diffs` → shared diff model (binary/withheld diffs flagged, unsafe paths dropped), raw files at SHA with streaming size cap                          |
+| Trigger reviews          | `reviews` queue (BullMQ), job id per (repository, MR, head SHA); worker `MergeRequestReviewService` runs the Phase 3 pipeline with `ai-review.yaml` at the head SHA                               |
+| Publish inline comments  | Discussions with diff-derived positions (old_line for context lines); rejected positions fall back to the summary                                                                                 |
+| Publish summaries        | One summary note per MR, updated in place                                                                                                                                                         |
+| Track findings           | `review_findings` lifecycle per fingerprint (PUBLISHED/RESOLVED…), sessions, executions, comments, audit log                                                                                      |
+| Handle new commits       | Re-review per head SHA; fixed findings → thread resolved + `RESOLVED`; superseded commits skipped; MR head re-checked before publishing                                                           |
+
+### 9.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **23 projects**. **267 unit tests** pass, 1 skipped.
+- `pnpm test:integration`: **69 tests** pass. New in this phase:
+  - **Worker end to end (7):** real worker, PostgreSQL and Redis against the fake GitLab HTTP server, with a fake AI
+    reviewer. Covers:
+    - the inline comment landing on the right line, plus one summary;
+    - every database record (session, executions, findings, comments, audit);
+    - an idempotent re-run;
+    - a superseded commit being skipped;
+    - the fixed commit resolving the thread and updating the same summary;
+    - disabled and invalid config;
+    - tenant isolation;
+    - a full pass through BullMQ.
+  - **API webhook (8):** real HTTP covering:
+    - connect-gitlab with encrypted storage;
+    - queued, duplicate and ignored deliveries;
+    - the identical 401 for bad token, unknown repository and project mismatch;
+    - a re-review on push;
+    - a 300 kB payload;
+    - token rotation;
+    - SSRF refusal.
+  - **GitLab adapter (13, unit tier):** against the fake server. Covers pagination, 429 retry, redirect refusal,
+    the SSRF policy, inline position rules, summary upsert, resolve, and hook reuse.
+- The built `api`, `worker` and `admin` bundles start in production mode, and the worker now connects to
+  PostgreSQL.
+- **Not verified against a real GitLab instance.** No GitLab token is configured on this machine. See
+  [GITLAB.md](./GITLAB.md) for the steps.
+
+### 9.3 Deviations and decisions
+
+| Item                    | Decision                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| GitLab client           | Small typed `fetch` client instead of `@gitbeaker/rest` (SSRF/redirect/size control) — ADR-027        |
+| Connecting repositories | Operator command, not an HTTP API: there is no authenticated management API until Phase 7             |
+| Shared reviewer factory | `createReviewers` moved from the CLI to `@acra/ai-providers-factory` (used by the CLI and the worker) |
+| Quick-action defence    | Added after analysis: GitLab executes `/merge` etc. from comment text as the bot (ADR-028)            |
+| Drafts                  | Draft MRs are reviewed like any other open MR (a configurable skip can be added later)                |
+| `background_jobs` table | Not created: BullMQ plus `review_sessions` / `webhook_deliveries` already give durable job state      |
+
+### 9.4 Known limitations / follow-ups
+
+- **Real GitLab verification** needs a token and a public URL (tunnel).
+- **Rate limiting on the webhook endpoint** is planned for Phase 8.
+- **SSRF:** a DNS-rebinding window remains between the check and the connection. A pinned-address agent is
+  planned for Phase 8.
+- **Manual review triggers** (a comment command or the API) are not implemented. Reviews start from webhooks only.
+- **Dismissing findings on GitLab:** resolving a thread by hand does not yet mark the finding `DISMISSED`.
+  That needs note/discussion events, planned for Phase 7 together with the dashboard.

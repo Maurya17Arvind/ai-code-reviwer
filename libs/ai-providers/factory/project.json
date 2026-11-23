@@ -1,0 +1,20 @@
+{
+  "name": "ai-providers-factory",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/ai-providers/factory/src",
+  "projectType": "library",
+  "tags": ["scope:node", "type:adapter"],
+  "// targets": "to see all targets run: nx show project ai-providers-factory --web",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "tsc --noEmit -p {projectRoot}/tsconfig.lib.json",
+          "tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

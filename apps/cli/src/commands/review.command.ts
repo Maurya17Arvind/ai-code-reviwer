@@ -8,7 +8,7 @@ import { relative } from 'node:path';
 import { CliError, type CliIO, formatBytes, paint } from '../core/cli-context';
 import { type ContextOptions, loadReviewContext } from '../core/review-context';
 import { LocalReviewStore } from '../core/review-store';
-import { type ReviewerFactory } from '../core/reviewers';
+import { type ReviewerFactory } from '@acra/ai-providers-factory';
 import { renderReportText } from '../core/render-report';
 import { type GlobalOptions, openRepository, toCliError } from '../core/workspace';
 

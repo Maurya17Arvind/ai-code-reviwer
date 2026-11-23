@@ -31,3 +31,5 @@ A _Proposed_ ADR describes a decision for a future phase; it becomes _Accepted_ 
 | [024](./024-model-selection.md)                                | Model selection and provider defaults                      | Accepted                                                    |
 | [026](./026-local-ollama-provider.md)                          | Local Ollama provider                                      | Accepted                                                    |
 | [025](./025-review-persistence-phasing.md)                     | Review persistence: local store now, database in Phase 4   | Accepted                                                    |
+| [027](./027-gitlab-fetch-client.md)                            | Small typed fetch client for GitLab instead of a full SDK  | Accepted                                                    |
+| [028](./028-gitlab-webhooks-and-publishing-safety.md)          | GitLab webhook intake and safe publishing                  | Accepted                                                    |

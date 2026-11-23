@@ -64,6 +64,29 @@ The symlink-escape test is skipped on Windows machines without Developer Mode (s
 | Timeouts per provider, SDK retries bounded, output caps (findings, text length), refusal handling                                   | adapters, review graph                                                |
 | Local review history inside `.git/`, owner-only file modes, atomic writes, schema-validated reads                                   | `LocalReviewStore`                                                    |
 
+## 2c. Controls implemented in Phase 4 (GitLab)
+
+| Control                                                                                                                     | Where                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Provider tokens envelope-encrypted (AES-256-GCM, per-record data key, AAD = connection id); decrypted only in worker memory | `envelope-crypto.ts`, `gitLabProviderFromConnection` (ADR-011)         |
+| Per-repository webhook secret stored as SHA-256, constant-time compare; identical 401 for every auth failure                | `GitLabWebhookService` (ADR-028)                                       |
+| Payload project id must match the repository (no cross-project token reuse)                                                 | `GitLabWebhookService`                                                 |
+| Replay protection (unique delivery ids); idempotent jobs and sessions per head SHA                                          | `webhook_deliveries`, `reviewJobId`, `review_sessions.idempotency_key` |
+| SSRF guard for GitLab URLs: https, host allowlist, DNS-resolved private/reserved ranges blocked, no redirects               | `assertSafeOutboundUrl`, `GitLabClient` (ADR-027)                      |
+| GitLab quick actions and @mentions neutralised in every comment; Markdown escaped                                           | `publishing/sanitize.ts` (ADR-028)                                     |
+| Duplicate markers trusted only on bot-authored notes                                                                        | `indexBotComments`                                                     |
+| Inline positions derived from the diff, never from model output; superseded results never published                         | `planPublication`, worker re-check                                     |
+| Webhook jobs carry ids only; `ai-review.yaml` read at the reviewed SHA and validated (invalid → permanent failure)          | queue schema, worker                                                   |
+| Tenant isolation: jobs whose organization does not own the repository are rejected; stores filter by organization           | `MergeRequestReviewService`, `ReviewStore`                             |
+| Admin token input only via environment (never argv)                                                                         | `admin.ts`                                                             |
+| Every review and connection is audited (append-only)                                                                        | `audit_logs`                                                           |
+
+Residual risks (Phase 8):
+
+- DNS rebinding between the SSRF check and the connection (planned fix: a pinned-address agent);
+- the webhook endpoint has no rate limiting yet;
+- the master key comes from an environment variable (planned: a KMS).
+
 ### Development-only relaxations (must not reach production)
 
 - `acra_app` has `CREATEDB` so `prisma migrate dev` can create a shadow database. Production roles: no `CREATEDB`; migrations via `migrate deploy`.

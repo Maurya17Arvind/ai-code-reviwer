@@ -1,6 +1,6 @@
 # ADR-011: Envelope encryption for provider credentials
 
-**Status:** Proposed (implementation in Phase 4, with `provider_connections`) · 2026-11-23
+**Status:** Accepted (implemented in Phase 4: `libs/security/envelope-crypto.ts`, `provider_connections.encrypted_token`) · 2026-11-23
 
 ## Decision
 

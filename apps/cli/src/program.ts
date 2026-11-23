@@ -5,7 +5,7 @@ import { registerInitCommand } from './commands/init.command';
 import { registerReviewCommand } from './commands/review.command';
 import { registerStatusCommand } from './commands/status.command';
 import { type CliIO } from './core/cli-context';
-import { createReviewers, type ReviewerFactory } from './core/reviewers';
+import { createReviewers, type ReviewerFactory } from '@acra/ai-providers-factory';
 
 export const CLI_NAME = 'ai-review';
 export const CLI_VERSION = '0.3.0';

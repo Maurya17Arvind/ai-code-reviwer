@@ -58,6 +58,9 @@ model Organization {
   members      OrganizationMember[]
   repositories Repository[]
   auditLogs    AuditLog[]
+  connections  ProviderConnection[]
+  sessions     ReviewSession[]
+  findings     ReviewFinding[]
 
   @@map("organizations")
 }
@@ -94,21 +97,29 @@ model OrganizationMember {
 }
 
 model Repository {
-  id             String          @id @default(uuid(7)) @db.Uuid
-  organizationId String          @map("organization_id") @db.Uuid
-  provider       GitProviderKind
+  id                String          @id @default(uuid(7)) @db.Uuid
+  organizationId    String          @map("organization_id") @db.Uuid
+  provider          GitProviderKind
   /// Provider-side identifier (GitLab project id, GitHub repository id). Null for LOCAL.
-  externalId     String?         @map("external_id") @db.VarChar(100)
+  externalId        String?         @map("external_id") @db.VarChar(100)
   /// e.g. "group/subgroup/project" or "owner/repo".
-  fullName       String          @map("full_name") @db.VarChar(500)
-  defaultBranch  String          @default("main") @map("default_branch") @db.VarChar(255)
-  webUrl         String?         @map("web_url") @db.VarChar(2048)
-  isActive       Boolean         @default(true) @map("is_active")
-  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt      DateTime?       @map("deleted_at") @db.Timestamptz(3)
+  fullName          String          @map("full_name") @db.VarChar(500)
+  defaultBranch     String          @default("main") @map("default_branch") @db.VarChar(255)
+  webUrl            String?         @map("web_url") @db.VarChar(2048)
+  isActive          Boolean         @default(true) @map("is_active")
+  /// Provider connection used to access this repository (null for LOCAL).
+  connectionId      String?         @map("connection_id") @db.Uuid
+  /// SHA-256 of the per-repository webhook token; the token itself is never stored.
+  webhookSecretHash String?         @map("webhook_secret_hash") @db.VarChar(64)
+  webhookId         String?         @map("webhook_id") @db.VarChar(100)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime?       @map("deleted_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  connection   ProviderConnection? @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  sessions     ReviewSession[]
+  findings     ReviewFinding[]
 
   @@unique([organizationId, provider, externalId])
   @@index([organizationId, isActive])
@@ -139,4 +150,191 @@ model AuditLog {
   @@index([actorUserId, createdAt(sort: Desc)])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: provider connections, review sessions, findings, comments, webhooks
+// ---------------------------------------------------------------------------
+
+enum ReviewSessionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  SUPERSEDED
+  SKIPPED
+
+  @@map("review_session_status")
+}
+
+enum FindingStatus {
+  NEW
+  VALIDATED
+  PUBLISHED
+  RESOLVED
+  DISMISSED
+  FALSE_POSITIVE
+
+  @@map("finding_status")
+}
+
+enum CommentKind {
+  INLINE
+  SUMMARY
+
+  @@map("comment_kind")
+}
+
+enum WebhookDeliveryStatus {
+  ACCEPTED
+  IGNORED
+  REJECTED
+
+  @@map("webhook_delivery_status")
+}
+
+/// Credentials for a GitLab/GitHub instance. The token is envelope-encrypted (ADR-011) and bound
+/// to this row's id as associated data; it never leaves the backend.
+model ProviderConnection {
+  id             String          @id @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  provider       GitProviderKind
+  name           String          @db.VarChar(200)
+  /// Validated against the SSRF policy when created and before use.
+  baseUrl        String          @map("base_url") @db.VarChar(2048)
+  encryptedToken Json            @map("encrypted_token")
+  tokenKeyId     String          @map("token_key_id") @db.VarChar(32)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?       @map("deleted_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  repositories Repository[]
+
+  @@unique([organizationId, provider, name])
+  @@map("provider_connections")
+}
+
+model ReviewSession {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  repositoryId   String              @map("repository_id") @db.Uuid
+  /// MR iid / PR number.
+  requestId      Int?                @map("request_id")
+  baseSha        String?             @map("base_sha") @db.VarChar(64)
+  headSha        String              @map("head_sha") @db.VarChar(64)
+  contextHash    String?             @map("context_hash") @db.VarChar(64)
+  promptHash     String?             @map("prompt_hash") @db.VarChar(64)
+  status         ReviewSessionStatus @default(QUEUED)
+  /// "gitlab:<repositoryId>:<iid>:<headSha>" — one session per head commit.
+  idempotencyKey String              @unique @map("idempotency_key") @db.VarChar(200)
+  report         Json?
+  errorCode      String?             @map("error_code") @db.VarChar(100)
+  errorMessage   String?             @map("error_message") @db.VarChar(1000)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt      DateTime?           @map("started_at") @db.Timestamptz(3)
+  finishedAt     DateTime?           @map("finished_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  executions   ModelExecution[]
+  comments     ReviewComment[]
+
+  @@index([repositoryId, requestId, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("review_sessions")
+}
+
+model ModelExecution {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  reviewSessionId String   @map("review_session_id") @db.Uuid
+  provider        String   @db.VarChar(20)
+  model           String   @db.VarChar(100)
+  servedByModel   String?  @map("served_by_model") @db.VarChar(100)
+  status          String   @db.VarChar(20)
+  errorKind       String?  @map("error_kind") @db.VarChar(50)
+  inputTokens     Int      @default(0) @map("input_tokens")
+  outputTokens    Int      @default(0) @map("output_tokens")
+  cacheReadTokens Int      @default(0) @map("cache_read_tokens")
+  /// Estimated cost in millionths of a USD (null when unknown).
+  costMicros      BigInt?  @map("cost_micros")
+  latencyMs       Int      @map("latency_ms")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session ReviewSession @relation(fields: [reviewSessionId], references: [id], onDelete: Restrict)
+
+  @@index([reviewSessionId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("model_executions")
+}
+
+/// One row per (repository, MR, fingerprint): the lifecycle of an issue across commits.
+model ReviewFinding {
+  id             String        @id @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  repositoryId   String        @map("repository_id") @db.Uuid
+  requestId      Int           @map("request_id")
+  fingerprint    String        @db.VarChar(64)
+  lastSessionId  String        @map("last_session_id") @db.Uuid
+  filePath       String        @map("file_path") @db.VarChar(1000)
+  lineNumber     Int?          @map("line_number")
+  endLineNumber  Int?          @map("end_line_number")
+  severity       String        @db.VarChar(10)
+  category       String        @db.VarChar(40)
+  title          String        @db.VarChar(300)
+  description    String
+  evidence       String
+  suggestion     String?
+  confidence     Float
+  sources        String[]
+  placement      String        @db.VarChar(10)
+  status         FindingStatus
+  firstSeenSha   String        @map("first_seen_sha") @db.VarChar(64)
+  lastSeenSha    String        @map("last_seen_sha") @db.VarChar(64)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  repository   Repository      @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  comments     ReviewComment[]
+
+  @@unique([repositoryId, requestId, fingerprint])
+  @@index([organizationId, status])
+  @@map("review_findings")
+}
+
+model ReviewComment {
+  id                   String      @id @default(uuid(7)) @db.Uuid
+  organizationId       String      @map("organization_id") @db.Uuid
+  reviewSessionId      String      @map("review_session_id") @db.Uuid
+  findingId            String?     @map("finding_id") @db.Uuid
+  kind                 CommentKind
+  providerDiscussionId String?     @map("provider_discussion_id") @db.VarChar(100)
+  providerNoteId       String      @map("provider_note_id") @db.VarChar(100)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session ReviewSession  @relation(fields: [reviewSessionId], references: [id], onDelete: Restrict)
+  finding ReviewFinding? @relation(fields: [findingId], references: [id], onDelete: Restrict)
+
+  @@index([reviewSessionId])
+  @@index([findingId])
+  @@map("review_comments")
+}
+
+/// Idempotency record for incoming webhooks (replay protection).
+model WebhookDelivery {
+  id           String                @id @default(uuid(7)) @db.Uuid
+  provider     GitProviderKind
+  deliveryId   String                @map("delivery_id") @db.VarChar(200)
+  repositoryId String?               @map("repository_id") @db.Uuid
+  event        String                @db.VarChar(100)
+  status       WebhookDeliveryStatus
+  reason       String?               @db.VarChar(200)
+  receivedAt   DateTime              @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@unique([provider, deliveryId])
+  @@index([repositoryId, receivedAt(sort: Desc)])
+  @@map("webhook_deliveries")
 }

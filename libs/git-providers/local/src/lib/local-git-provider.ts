@@ -150,6 +150,11 @@ export class LocalGitProvider implements RepositoryReader {
         if (scope.includeUntracked) files.push(...(await this.untrackedFiles()));
         return { scope, base: { kind: 'commit', sha: mergeBase }, head: { kind: 'worktree' }, files };
       }
+      case 'merge_request':
+        throw new GitProviderError(
+          'Merge requests are reviewed through the hosted provider, not a local clone',
+          'GIT_FAILED',
+        );
     }
   }
 

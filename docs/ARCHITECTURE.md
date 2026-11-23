@@ -1,6 +1,6 @@
 # Architecture — AI Code Review Agent
 
-> Status: **Phases 1–3 implemented** (foundation, local Git + CLI, AI review engine). Last updated: 2026-11-23.
+> Status: **Phases 1–4 implemented** (foundation, local Git + CLI, AI review engine, GitLab). Last updated: 2026-11-23.
 > Decisions are recorded as ADRs in [`docs/adr/`](./adr/README.md).
 
 ## 1. Purpose and scope
@@ -55,14 +55,14 @@ libs/
 ├── git-providers/
 │   ├── core/             ✅ Phase 2 — provider ports (RepositoryReader), diff model, errors
 │   ├── local/            ✅ Phase 2 — read-only LocalGitProvider (git CLI via simple-git, hardened)
-│   ├── gitlab/           ⏳ Phase 4
+│   ├── gitlab/           ✅ Phase 4 — typed REST client (SSRF-guarded), MR source + publisher, connection helper
 │   └── github/           ⏳ Phase 5
 ├── repository-context/   ✅ Phase 2 — unified-diff parser, path filter, review context builder, context hash
 │
 ├── agent-core/           ✅ Phase 3 — LangGraph review graph (parallel reviewers via Send), tracing guard
 ├── review-engine/        ✅ Phase 3 — secrets, static analyzers, prompt builder, aggregator, validators, dedup, lifecycle, report
 ├── ai-providers/{core,claude,openai}        ✅ Phase 3 — AiReviewer port + shared output schema; Claude & GPT adapters
-├── publishing/           ⏳ Phase 4
+├── publishing/           ✅ Phase 4 — publication planner, safe comment rendering, executor
 ├── approvals/            ⏳ Phase 6
 └── fix-engine/           ⏳ Phase 6
 
@@ -131,7 +131,7 @@ The brief's single `GitProvider` interface is split into capability ports in `@a
 | ----------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
 | `FileContentReader`                       | `readFile(path, revision)`. The narrow port that domain services depend on | Local ✅, GitLab/GitHub (Phases 4–5) |
 | `RepositoryReader`                        | + `getRepositoryInfo()`, `getChangeSet(scope)`, `getCommitDetails(ref)`    | Local ✅, GitLab/GitHub (Phases 4–5) |
-| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab/GitHub (Phases 4–5)           |
+| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab ✅, GitHub (Phase 5)          |
 | `RepositoryWriter`                        | Branch, push, create MR/PR. **Approval-gated**                             | Phase 6                              |
 
 The provider-neutral diff model (`ChangedFile → DiffHunk → DiffLine` with old/new line numbers) is produced by

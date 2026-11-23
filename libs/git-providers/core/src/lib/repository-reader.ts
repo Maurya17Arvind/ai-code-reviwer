@@ -20,7 +20,9 @@ export type ChangeScope =
   /** Commits on another branch without checking it out: merge-base(base, head)..head. */
   | { readonly kind: 'branch'; readonly base: string; readonly head: string }
   /** Everything not yet in base: merge-base(base, HEAD) vs working tree (+ staged, + untracked). */
-  | { readonly kind: 'all'; readonly base: string; readonly includeUntracked: boolean };
+  | { readonly kind: 'all'; readonly base: string; readonly includeUntracked: boolean }
+  /** A hosted merge/pull request, diffed by the provider between its base and head commits. */
+  | { readonly kind: 'merge_request'; readonly provider: 'gitlab' | 'github'; readonly id: number };
 
 /** A concrete revision whose file contents can be read. */
 export type Revision =

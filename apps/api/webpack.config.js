@@ -14,6 +14,7 @@ module.exports = {
       target: 'node',
       compiler: 'tsc',
       main: './src/main.ts',
+      additionalEntryPoints: [{ entryName: 'admin', entryPath: './src/admin.ts' }],
       tsConfig: './tsconfig.app.json',
       optimization: false,
       outputHashing: 'none',

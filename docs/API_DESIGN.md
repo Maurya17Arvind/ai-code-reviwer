@@ -38,6 +38,18 @@ Readiness: probes PostgreSQL (`SELECT 1`) and Redis (`INFO` over the BullMQ conn
 
 No versions, hostnames or driver messages are exposed. Contract: `ReadinessResponseSchema`.
 
+### ✅ `POST /api/webhooks/gitlab/:repositoryId`
+
+GitLab project hook (registered by `connect-gitlab`, see [GITLAB.md](./GITLAB.md)). Headers: `X-Gitlab-Token`,
+`X-Gitlab-Event`, `X-Gitlab-Event-UUID`. Body: GitLab merge request event (2 MB max).
+
+| Status | Body                             | When                                                                 |
+| ------ | -------------------------------- | -------------------------------------------------------------------- |
+| `202`  | `{ status: "queued", jobId }`    | MR opened / reopened / new commits                                   |
+| `200`  | `{ status: "duplicate" }`        | delivery already processed                                           |
+| `200`  | `{ status: "ignored", reason }`  | other events or actions, closed MR, inactive repository              |
+| `401`  | ApiError `Invalid webhook token` | unknown repository, bad token, project mismatch (identical response) |
+
 ### Planned (later phases)
 
 | Area                       | Endpoints (indicative)                                                                                      | Phase                 |

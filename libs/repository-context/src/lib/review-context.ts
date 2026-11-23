@@ -110,6 +110,10 @@ export async function buildReviewContext(
       omit('binary');
       continue;
     }
+    if (file.diffUnavailable) {
+      omit('too_large', 'diff not provided by the Git provider');
+      continue;
+    }
     if (files.length >= budget.maxFiles) {
       omit('max_files', `limit ${budget.maxFiles}`);
       continue;
