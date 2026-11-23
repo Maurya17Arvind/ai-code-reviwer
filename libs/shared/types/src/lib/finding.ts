@@ -3,7 +3,7 @@ import * as z from 'zod/mini';
 import { ReviewCategorySchema, SeveritySchema } from './review';
 
 /** Who produced a finding. `static` = deterministic built-in analyzers (no AI). */
-export const FindingSourceSchema = z.enum(['claude', 'gpt', 'static']);
+export const FindingSourceSchema = z.enum(['claude', 'gpt', 'ollama', 'static']);
 export type FindingSource = z.infer<typeof FindingSourceSchema>;
 
 /** Lifecycle statuses (Module F). */

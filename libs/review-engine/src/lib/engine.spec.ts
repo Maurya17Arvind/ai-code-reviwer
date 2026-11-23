@@ -132,6 +132,16 @@ describe('aggregation', () => {
   });
 });
 
+describe('stripPromptFormatting', () => {
+  it('removes diff markers and line-number prefixes copied from the prompt', async () => {
+    const { stripPromptFormatting } = await import('./aggregator/aggregate');
+    expect(stripPromptFormatting('4 |   let sum = 0;\n+ 5 |   for (;;) {\n  6 | }')).toBe(
+      '  let sum = 0;\n  for (;;) {\n}',
+    );
+    expect(stripPromptFormatting('const a = b | c;')).toBe('const a = b | c;');
+  });
+});
+
 describe('validation (Module E)', () => {
   it('accepts a grounded finding on a changed line as inline', () => {
     const { accepted } = validate();

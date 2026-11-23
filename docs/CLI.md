@@ -94,17 +94,18 @@ Preview only — nothing was sent to any AI provider or server.
 Reviews the changes with Claude and GPT. It uses the same scope flags as `changes` (`--staged`, `--unstaged`,
 `--base`, `--branch`, `--all`, `--no-untracked`, `--diff-context`, `--surrounding`).
 
-| Option                 | Meaning                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------- |
-| `--provider claude     | gpt                                                                              | both`                              | Reviewers to run (default `both`; intersected with `review.providers` in ai-review.yaml) |
-| `-y, --yes`            | Consent to sending the review context (required without an interactive terminal) |
-| `--fail-on <severity>` | Exit with code **3** when findings at or above this severity exist (CI gate)     |
-| `--format text         | json`                                                                            | JSON prints the full review report |
-| `--verbose`            | Print descriptions, evidence and suggestions                                     |
+| Option                 | Meaning                                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`    | `claude`, `gpt`, `ollama` (local), `both` (Claude + GPT, default) or `all`. Intersected with `review.providers` in ai-review.yaml |
+| `-y, --yes`            | Consent to sending the review context to remote providers (required without an interactive terminal)                              |
+| `--fail-on <severity>` | Exit with code **3** when findings at or above this severity exist (CI gate)                                                      |
+| `--format <format>`    | `text` (default) or `json` (full review report)                                                                                   |
+| `--verbose`            | Print descriptions, evidence and suggestions                                                                                      |
 
 **Consent.** Before anything is sent, the CLI prints the number of files, the size and the destinations (provider,
 model, host), then asks. Without a terminal it refuses unless `--yes` is passed. Secrets are redacted first.
-Nothing is sent to our servers, and the repository's own `.env` is never loaded.
+Nothing is sent to our servers, and the repository's own `.env` is never loaded. When every reviewer is local
+(Ollama on loopback), no consent is needed: the summary says "Nothing leaves this machine".
 
 Results are stored in `.git/ai-review/`, which is never committed (latest report, last 50 reports, your
 dismissals). The command never modifies, stages, commits or pushes code.
@@ -125,16 +126,19 @@ suggestions, and resolved findings. Untrusted model text is escaped.
 
 ## AI provider configuration (environment)
 
-| Variable                                                                                            | Default           | Meaning                                                            |
-| --------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `ANTHROPIC_API_KEY`                                                                                 | —                 | Read by the Anthropic SDK (an `ant auth login` profile also works) |
-| `ANTHROPIC_REVIEW_MODEL`                                                                            | `claude-opus-5-5` | Claude model                                                       |
-| `ANTHROPIC_REVIEW_EFFORT`                                                                           | `high`            | `low                                                               | medium | high  | xhigh | max` |
-| `ANTHROPIC_REFUSAL_FALLBACK`                                                                        | `true`            | Server-side refusal fallback (ADR-024)                             |
-| `OPENAI_API_KEY`                                                                                    | —                 | Read by the OpenAI SDK                                             |
-| `OPENAI_REVIEW_MODEL`                                                                               | **none**          | Required to enable GPT; GPT is skipped without it                  |
-| `OPENAI_REASONING_EFFORT`                                                                           | unset             | `low                                                               | medium | high` |
-| `OPENAI_PRICE_INPUT_PER_MTOK`, `OPENAI_PRICE_OUTPUT_PER_MTOK`, `OPENAI_PRICE_CACHED_INPUT_PER_MTOK` | unset             | Enables GPT cost estimates                                         |
-| `AI_REVIEW_TIMEOUT_MS`                                                                              | `600000`          | Per-provider limit                                                 |
+| Variable                                                                                            | Default                  | Meaning                                                                                  |
+| --------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                                                                                 | —                        | Read by the Anthropic SDK (an `ant auth login` profile also works)                       |
+| `ANTHROPIC_REVIEW_MODEL`                                                                            | `claude-opus-5-5`        | Claude model                                                                             |
+| `ANTHROPIC_REVIEW_EFFORT`                                                                           | `high`                   | `low`, `medium`, `high`, `xhigh` or `max`                                                |
+| `ANTHROPIC_REFUSAL_FALLBACK`                                                                        | `true`                   | Server-side refusal fallback (ADR-024)                                                   |
+| `OPENAI_API_KEY`                                                                                    | —                        | Read by the OpenAI SDK                                                                   |
+| `OPENAI_REVIEW_MODEL`                                                                               | **none**                 | Required to enable GPT; GPT is skipped without it                                        |
+| `OPENAI_REASONING_EFFORT`                                                                           | unset                    | `low`, `medium` or `high`                                                                |
+| `OPENAI_PRICE_INPUT_PER_MTOK`, `OPENAI_PRICE_OUTPUT_PER_MTOK`, `OPENAI_PRICE_CACHED_INPUT_PER_MTOK` | unset                    | Enables GPT cost estimates                                                               |
+| `OLLAMA_REVIEW_MODEL`                                                                               | **none**                 | Local Ollama model (e.g. `qwen2.5-coder:3b`); required for `--provider ollama` (ADR-026) |
+| `OLLAMA_BASE_URL`                                                                                   | `http://127.0.0.1:11434` | A non-loopback host requires consent, like cloud providers                               |
+| `OLLAMA_NUM_CTX`                                                                                    | `16384`                  | Context window; prompts that fill it are rejected as truncated                           |
+| `AI_REVIEW_TIMEOUT_MS`                                                                              | `600000`                 | Per-provider limit (raise it for slow CPU-only local models)                             |
 
 Exit codes for `review`: `0` success · `1` no reviewer succeeded or a runtime error · `2` usage error or missing consent · `3` `--fail-on` threshold reached.

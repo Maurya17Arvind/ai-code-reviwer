@@ -72,6 +72,8 @@ review:
   providers:
     claude: true
     openai: true
+    # Local model via Ollama (nothing leaves the machine); runs with --provider ollama|all and OLLAMA_REVIEW_MODEL.
+    ollama: true
 
   categories:
     - bug

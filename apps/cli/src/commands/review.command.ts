@@ -13,7 +13,7 @@ import { renderReportText } from '../core/render-report';
 import { type GlobalOptions, openRepository, toCliError } from '../core/workspace';
 
 interface ReviewOptions extends ContextOptions {
-  readonly provider: 'claude' | 'gpt' | 'both';
+  readonly provider: 'claude' | 'gpt' | 'ollama' | 'both' | 'all';
   readonly format: 'text' | 'json';
   readonly yes?: boolean;
   readonly failOn?: Severity;
@@ -50,7 +50,9 @@ export function registerReviewCommand(program: Command, io: CliIO, createReviewe
     .option('--diff-context <lines>', 'unchanged lines inside the diff (git -U)', nonNegativeInt(50))
     .option('--surrounding <lines>', 'surrounding source lines per hunk', nonNegativeInt(200))
     .addOption(
-      new Option('--provider <provider>', 'AI reviewers to use').choices(['claude', 'gpt', 'both']).default('both'),
+      new Option('--provider <provider>', 'AI reviewers: claude, gpt, ollama (local), both (claude+gpt) or all')
+        .choices(['claude', 'gpt', 'ollama', 'both', 'all'])
+        .default('both'),
     )
     .addOption(
       new Option('--fail-on <severity>', 'exit with code 3 if findings at/above this severity exist').choices([
@@ -79,11 +81,18 @@ export function registerReviewCommand(program: Command, io: CliIO, createReviewe
         }
 
         const aiEnv = loadEnv(AiEnvSchema, io.env);
-        const wanted = new Set<AiProviderName>(
-          (options.provider === 'both' ? (['claude', 'gpt'] as const) : [options.provider]).filter((p) =>
-            p === 'claude' ? config.review.providers.claude : config.review.providers.openai,
-          ),
-        );
+        const requested: readonly AiProviderName[] =
+          options.provider === 'both'
+            ? ['claude', 'gpt']
+            : options.provider === 'all'
+              ? ['claude', 'gpt', 'ollama']
+              : [options.provider];
+        const allowed: Record<AiProviderName, boolean> = {
+          claude: config.review.providers.claude,
+          gpt: config.review.providers.openai,
+          ollama: config.review.providers.ollama,
+        };
+        const wanted = new Set<AiProviderName>(requested.filter((p) => allowed[p]));
         if (wanted.size === 0)
           throw new CliError('No AI provider is enabled (see review.providers in ai-review.yaml and --provider).', 2);
         const setup = createReviewers(aiEnv, wanted);
@@ -95,9 +104,17 @@ export function registerReviewCommand(program: Command, io: CliIO, createReviewe
         // ---- Consent: show exactly what leaves the machine, then ask. ----
         const tracingWarning = disableThirdPartyTracing();
         if (tracingWarning) io.err(paint(io, 'yellow', tracingWarning));
-        const destinations = setup.destinations.map((d) => `${d.provider} (${d.model} via ${d.host})`).join(', ');
-        const summary = `About to send ${context.files.length} file(s) — diffs plus surrounding lines, ${formatBytes(context.stats.contextBytes)}, secrets redacted — to: ${destinations}.`;
-        if (!options.yes) {
+        const destinations = setup.destinations
+          .map((d) => `${d.provider} (${d.model} via ${d.host}${d.local ? ', this machine' : ''})`)
+          .join(', ');
+        // Consent is about code leaving the machine; purely local (loopback) reviewers need none.
+        const leavesMachine = setup.destinations.some((d) => !d.local);
+        const summary = leavesMachine
+          ? `About to send ${context.files.length} file(s) — diffs plus surrounding lines, ${formatBytes(context.stats.contextBytes)}, secrets redacted — to: ${destinations}.`
+          : `Reviewing ${context.files.length} file(s) (${formatBytes(context.stats.contextBytes)}) with ${destinations}. Nothing leaves this machine.`;
+        if (!leavesMachine) {
+          if (options.format === 'text') io.out(paint(io, 'dim', summary));
+        } else if (!options.yes) {
           if (!io.confirm)
             throw new CliError(`${summary}\nRe-run with --yes to consent (no interactive terminal available).`, 2);
           io.out(summary);

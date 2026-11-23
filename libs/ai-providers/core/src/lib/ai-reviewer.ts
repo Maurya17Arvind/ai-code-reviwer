@@ -3,7 +3,8 @@
  * on this interface — never on vendor SDKs (ADR-004).
  */
 
-export type AiProviderName = 'claude' | 'gpt';
+/** `ollama` = local model via Ollama (runs on this machine; nothing is sent to a third party). */
+export type AiProviderName = 'claude' | 'gpt' | 'ollama';
 
 /** Identical, provider-neutral prompt. Both reviewers in a session receive the same object. */
 export interface ReviewPrompt {

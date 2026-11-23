@@ -10,7 +10,7 @@ const Finding = z.custom<ReviewFinding>((value) => ReviewFindingSchema.safeParse
 });
 
 export const ModelExecutionSchema = z.object({
-  provider: z.enum(['claude', 'gpt']),
+  provider: z.enum(['claude', 'gpt', 'ollama']),
   model: z.string(),
   servedByModel: z.string().nullable(),
   status: z.enum(['succeeded', 'failed', 'skipped']),
@@ -37,12 +37,12 @@ export const FilteredFindingSchema = z.object({
   severity: z.enum(SeveritySchema.options),
   category: z.enum(ReviewCategorySchema.options),
   confidence: z.number(),
-  sources: z.array(z.enum(['claude', 'gpt', 'static'])),
+  sources: z.array(z.enum(['claude', 'gpt', 'ollama', 'static'])),
   reason: z.enum(['below_severity', 'below_confidence', 'dismissed', 'false_positive']),
 });
 
 export const RejectedFindingSchema = z.object({
-  source: z.enum(['claude', 'gpt', 'static']),
+  source: z.enum(['claude', 'gpt', 'ollama', 'static']),
   filePath: z.string(),
   title: z.string(),
   reason: z.string(),
@@ -60,7 +60,7 @@ export const ReviewReportSchema = z.object({
   promptHash: z.string(),
   secretsRedacted: z.number().int(),
   settings: z.object({
-    providers: z.array(z.enum(['claude', 'gpt'])),
+    providers: z.array(z.enum(['claude', 'gpt', 'ollama'])),
     categories: z.array(z.enum(ReviewCategorySchema.options)),
     minimumSeverity: z.enum(SeveritySchema.options),
     minimumConfidence: z.number(),

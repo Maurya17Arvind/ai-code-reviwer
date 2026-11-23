@@ -55,7 +55,7 @@ function factory(answer: (provider: AiProviderName) => unknown): ReviewerFactory
   return (_env, providers) => ({
     reviewers: [...providers].map((p) => new ScriptedReviewer(p, () => answer(p))),
     skipped: [],
-    destinations: [...providers].map((p) => ({ provider: p, model: `${p}-fake`, host: 'fake.invalid' })),
+    destinations: [...providers].map((p) => ({ provider: p, model: `${p}-fake`, host: 'fake.invalid', local: false })),
   });
 }
 
@@ -91,6 +91,45 @@ describe('ai-review review / findings / report / dismiss (real git, fake AI)', (
     expect(result.stderr).toMatch(
       /About to send 1 file\(s\)[\s\S]*claude \(claude-fake via fake\.invalid\)[\s\S]*--yes/,
     );
+    expect(ScriptedReviewer.prompts).toHaveLength(0);
+  });
+
+  it('needs no consent when every reviewer runs on this machine (local Ollama)', async () => {
+    const r = featureRepo();
+    const local: ReviewerFactory = (_env, providers) => ({
+      reviewers: [...providers].map(
+        (p) => new ScriptedReviewer(p, () => ({ findings: [nullDereference], summary: 's' })),
+      ),
+      skipped: [],
+      destinations: [...providers].map((p) => ({
+        provider: p,
+        model: 'qwen2.5-coder:3b',
+        host: '127.0.0.1:11434',
+        local: true,
+      })),
+    });
+    const result = await runCli(['review', '--provider', 'ollama'], r.root, { deps: { createReviewers: local } });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Nothing leaves this machine');
+    expect(result.stdout).toMatch(/HIGH\s+src\/user\.service\.ts:3/);
+    expect(ScriptedReviewer.prompts).toHaveLength(1);
+  });
+
+  it('still requires consent when any reviewer is remote', async () => {
+    const r = featureRepo();
+    const mixed: ReviewerFactory = (_env, providers) => ({
+      reviewers: [...providers].map((p) => new ScriptedReviewer(p, () => ({ findings: [], summary: 's' }))),
+      skipped: [],
+      destinations: [...providers].map((p) => ({
+        provider: p,
+        model: 'm',
+        host: p === 'ollama' ? '127.0.0.1:11434' : 'api.anthropic.com',
+        local: p === 'ollama',
+      })),
+    });
+    const result = await runCli(['review', '--provider', 'all'], r.root, { deps: { createReviewers: mixed } });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('About to send');
     expect(ScriptedReviewer.prompts).toHaveLength(0);
   });
 

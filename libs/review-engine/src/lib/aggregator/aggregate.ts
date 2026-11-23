@@ -77,13 +77,24 @@ export function aggregateFindings(
         category: finding.category,
         title: clip(finding.title, 200),
         description: clip(finding.description, MODEL_OUTPUT_LIMITS.maxTextLength),
-        evidence: clip(finding.evidence, MODEL_OUTPUT_LIMITS.maxEvidenceLength),
+        evidence: clip(stripPromptFormatting(finding.evidence), MODEL_OUTPUT_LIMITS.maxEvidenceLength),
         suggestion: finding.suggestion === null ? null : clip(finding.suggestion, MODEL_OUTPUT_LIMITS.maxTextLength),
         confidence: Number.isFinite(finding.confidence) ? Math.min(1, Math.max(0, finding.confidence)) : 0,
       });
     }
   }
   return { candidates, rejected };
+}
+
+/**
+ * Models sometimes copy the prompt's diff formatting ("+ 12 | code", "4 | code") into evidence.
+ * Strip it per line so stored/displayed evidence is plain code.
+ */
+export function stripPromptFormatting(evidence: string): string {
+  return evidence
+    .split('\n')
+    .map((line) => line.replace(/^\s*[+-]?\s*\d+\s*\|\s?/, ''))
+    .join('\n');
 }
 
 function positiveIntOrNull(value: number | null): number | null {

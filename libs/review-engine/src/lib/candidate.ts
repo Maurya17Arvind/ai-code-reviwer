@@ -17,4 +17,4 @@ export interface CandidateFinding {
 
 export const SEVERITY_RANK: Readonly<Record<Severity, number>> = { critical: 4, high: 3, medium: 2, low: 1 };
 
-export const SOURCE_ORDER: Readonly<Record<FindingSource, number>> = { static: 0, claude: 1, gpt: 2 };
+export const SOURCE_ORDER: Readonly<Record<FindingSource, number>> = { static: 0, claude: 1, gpt: 2, ollama: 3 };

@@ -23,6 +23,10 @@ export const AiEnvSchema = z.object({
   OPENAI_PRICE_INPUT_PER_MTOK: optionalPrice,
   OPENAI_PRICE_OUTPUT_PER_MTOK: optionalPrice,
   OPENAI_PRICE_CACHED_INPUT_PER_MTOK: optionalPrice,
+  /** Local Ollama model (e.g. qwen2.5-coder:3b). Ollama is used only when this is set. */
+  OLLAMA_REVIEW_MODEL: modelId.optional(),
+  OLLAMA_BASE_URL: z.url().default('http://127.0.0.1:11434'),
+  OLLAMA_NUM_CTX: z.coerce.number().int().min(2_048).max(262_144).default(16_384),
   /** Wall-clock limit per provider per review. */
   AI_REVIEW_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(600_000),
   /** Shown in the consent summary when set (where code will be sent). */

@@ -29,4 +29,5 @@ A _Proposed_ ADR describes a decision for a future phase; it becomes _Accepted_ 
 | [022](./022-independent-reviewers-deterministic-validation.md) | Independent AI reviewers, deterministic validation         | Accepted                                                    |
 | [023](./023-consent-and-data-egress.md)                        | Explicit consent and minimal data egress for AI reviews    | Accepted                                                    |
 | [024](./024-model-selection.md)                                | Model selection and provider defaults                      | Accepted                                                    |
+| [026](./026-local-ollama-provider.md)                          | Local Ollama provider                                      | Accepted                                                    |
 | [025](./025-review-persistence-phasing.md)                     | Review persistence: local store now, database in Phase 4   | Accepted                                                    |

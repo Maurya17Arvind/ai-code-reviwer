@@ -62,7 +62,10 @@ model, **serving model** (differs when a fallback ran), status, error kind, toke
 | Cost              | list-price table (served model)                                                                         | only if `OPENAI_PRICE_*` configured, else `null`        |
 | Retries / timeout | SDK retries ×2 (429/5xx/connection); 10 min request timeout; graph-level `AI_REVIEW_TIMEOUT_MS`         | same                                                    |
 
-Both share **one JSON schema** (`ModelReviewOutputSchema`). Every object is strict and every property required
+A third, optional **local** adapter (`ai-providers-ollama`, ADR-026) uses Ollama `/api/chat` with the same schema as
+`format` and `temperature: 0`. It is selected with `--provider ollama|all`, and loopback means no consent is needed.
+
+All adapters share **one JSON schema** (`ModelReviewOutputSchema`). Every object is strict and every property required
 (nullable when optional). Unsupported keywords are stripped. Constraints are enforced locally after parsing.
 
 ## 4. Deterministic post-processing (Module E)

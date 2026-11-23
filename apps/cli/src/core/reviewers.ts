@@ -1,5 +1,6 @@
 import { type AiProviderName, type AiReviewer } from '@acra/ai-providers-core';
 import { ClaudeReviewer } from '@acra/ai-providers-claude';
+import { OllamaReviewer } from '@acra/ai-providers-ollama';
 import { OpenAiReviewer } from '@acra/ai-providers-openai';
 import { type SkippedProvider } from '@acra/agent-core';
 import { type AiEnv } from '@acra/configuration';
@@ -8,7 +9,13 @@ export interface ReviewerSetup {
   readonly reviewers: AiReviewer[];
   readonly skipped: SkippedProvider[];
   /** Where code will be sent — shown in the consent summary. */
-  readonly destinations: Array<{ readonly provider: AiProviderName; readonly model: string; readonly host: string }>;
+  readonly destinations: Array<{
+    readonly provider: AiProviderName;
+    readonly model: string;
+    readonly host: string;
+    /** True when the destination is this machine (loopback) — no code leaves it. */
+    readonly local: boolean;
+  }>;
 }
 
 export type ReviewerFactory = (env: AiEnv, providers: ReadonlySet<AiProviderName>) => ReviewerSetup;
@@ -30,6 +37,7 @@ export const createReviewers: ReviewerFactory = (env, providers) => {
       provider: 'claude',
       model: env.ANTHROPIC_REVIEW_MODEL,
       host: hostOf(env.ANTHROPIC_BASE_URL, 'api.anthropic.com'),
+      local: isLoopbackHost(hostOf(env.ANTHROPIC_BASE_URL, 'api.anthropic.com')),
     });
   }
 
@@ -59,11 +67,46 @@ export const createReviewers: ReviewerFactory = (env, providers) => {
         provider: 'gpt',
         model: env.OPENAI_REVIEW_MODEL,
         host: hostOf(env.OPENAI_BASE_URL, 'api.openai.com'),
+        local: isLoopbackHost(hostOf(env.OPENAI_BASE_URL, 'api.openai.com')),
+      });
+    }
+  }
+
+  if (providers.has('ollama')) {
+    if (!env.OLLAMA_REVIEW_MODEL) {
+      setup.skipped.push({ provider: 'ollama', model: '(not configured)', reason: 'OLLAMA_REVIEW_MODEL is not set' });
+    } else {
+      setup.reviewers.push(
+        new OllamaReviewer({
+          model: env.OLLAMA_REVIEW_MODEL,
+          baseUrl: env.OLLAMA_BASE_URL,
+          numCtx: env.OLLAMA_NUM_CTX,
+          timeoutMs: env.AI_REVIEW_TIMEOUT_MS,
+        }),
+      );
+      const host = hostOf(env.OLLAMA_BASE_URL, '127.0.0.1:11434');
+      setup.destinations.push({
+        provider: 'ollama',
+        model: env.OLLAMA_REVIEW_MODEL,
+        host,
+        local: isLoopbackHost(host),
       });
     }
   }
   return setup;
 };
+
+/** localhost / 127.0.0.0/8 / ::1 — traffic that never leaves this machine. */
+export function isLoopbackHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  // "[::1]:11434" / "[::1]" → "::1"; "name:port" → "name". A bare IPv6 literal has no port to strip.
+  const name = lower.startsWith('[')
+    ? lower.slice(1, lower.indexOf(']'))
+    : lower.split(':').length === 2
+      ? (lower.split(':')[0] ?? '')
+      : lower;
+  return name === 'localhost' || name === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name);
+}
 
 function hostOf(url: string | undefined, fallback: string): string {
   if (!url) return fallback;

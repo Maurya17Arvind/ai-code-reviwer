@@ -60,8 +60,13 @@ export const ReviewConfigSchema = z.strictObject({
     .strictObject({
       enabled: z.boolean().default(true),
       providers: z
-        .strictObject({ claude: z.boolean().default(true), openai: z.boolean().default(true) })
-        .default({ claude: true, openai: true }),
+        .strictObject({
+          claude: z.boolean().default(true),
+          openai: z.boolean().default(true),
+          /** Local model via Ollama — allowed by default; runs only when selected and OLLAMA_REVIEW_MODEL is set. */
+          ollama: z.boolean().default(true),
+        })
+        .default({ claude: true, openai: true, ollama: true }),
       categories: z
         .array(ReviewCategory)
         .min(1)

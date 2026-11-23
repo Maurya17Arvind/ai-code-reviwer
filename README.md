@@ -10,7 +10,7 @@ published, and every code or Git change requires human approval. Merging is neve
 
 ## Stack
 
-Claude (Anthropic SDK) + GPT (OpenAI SDK) via LangGraph · Nx 24 · TypeScript 6.0 · Angular 22.3 (zoneless, signals) · NestJS 11 · PostgreSQL 18 + Prisma 7 ·
+Claude (Anthropic SDK) + GPT (OpenAI SDK) via LangGraph, optional local models via Ollama · Nx 24 · TypeScript 6.0 · Angular 22.3 (zoneless, signals) · NestJS 11 · PostgreSQL 18 + Prisma 7 ·
 Redis 8 + BullMQ 6 · Zod 4 · Vitest 5 · pnpm 10 · Node 24 LTS
 
 ## Repository layout
@@ -31,7 +31,7 @@ libs/
   git-providers/core  provider ports and diff model
   git-providers/local read-only local Git adapter
   repository-context  diff parser and review-context builder
-  ai-providers/*      AiReviewer port, Claude and GPT adapters
+  ai-providers/*      AiReviewer port, Claude, GPT and local Ollama adapters
   review-engine       static analysis, prompt, validation, dedup, lifecycle, reports
   agent-core          LangGraph review pipeline
 infrastructure/       Docker init scripts
