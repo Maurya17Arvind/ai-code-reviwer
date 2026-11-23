@@ -50,11 +50,23 @@ GitLab project hook (registered by `connect-gitlab`, see [GITLAB.md](./GITLAB.md
 | `200`  | `{ status: "ignored", reason }`  | other events or actions, closed MR, inactive repository              |
 | `401`  | ApiError `Invalid webhook token` | unknown repository, bad token, project mismatch (identical response) |
 
+### ✅ `POST /api/webhooks/github`
+
+The GitHub App webhook (one URL for all installations, see [GITHUB.md](./GITHUB.md) and ADR-030). Headers:
+`X-Hub-Signature-256` (HMAC-SHA256 of the raw body), `X-GitHub-Event`, `X-GitHub-Delivery`. Body: 2 MB max.
+
+| Status | Body                                 | When                                                                                                        |
+| ------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `202`  | `{ status: "queued", jobId }`        | `pull_request` opened / reopened / synchronize / ready_for_review on an open PR                             |
+| `200`  | `{ status: "duplicate" }`            | delivery already processed                                                                                  |
+| `200`  | `{ status: "ignored", reason }`      | ping, other events/actions, closed PR, inactive repository, unknown installation; installation sync results |
+| `401`  | ApiError `Invalid webhook signature` | missing or wrong signature                                                                                  |
+| `404`  | ApiError                             | `GITHUB_WEBHOOK_SECRET` not configured                                                                      |
+
 ### Planned (later phases)
 
 | Area                       | Endpoints (indicative)                                                                                      | Phase                 |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- |
-| Webhooks                   | `POST /api/webhooks/gitlab`, `POST /api/webhooks/github` (signature-verified, idempotent)                   | 4, 5                  |
 | Organizations / members    | `/api/v1/organizations`, `/members`                                                                         | 7                     |
 | Repositories & connections | `/api/v1/organizations/:orgId/repositories`, `/connections`                                                 | 4, 5, 7               |
 | Reviews & findings         | `/reviews`, `/reviews/:id`, `/findings?severity=&status=`, `PATCH /findings/:id` (dismiss / false positive) | 3, 7                  |

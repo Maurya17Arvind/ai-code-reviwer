@@ -3,7 +3,7 @@ import { ApiErrorSchema, LivenessResponseSchema, ReadinessResponseSchema } from 
 import { type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { configureApp } from './configure-app';
+import { APP_OPTIONS, configureApp } from './configure-app';
 
 /** Boots the real API against local PostgreSQL + Redis and exercises it over HTTP. */
 describe('API (integration)', () => {
@@ -12,7 +12,7 @@ describe('API (integration)', () => {
 
   beforeAll(async () => {
     const config = loadEnv(ApiEnvSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
-    app = await NestFactory.create(AppModule.forRoot(config), { bufferLogs: true });
+    app = await NestFactory.create(AppModule.forRoot(config), APP_OPTIONS);
     configureApp(app, config);
     await app.listen(0, '127.0.0.1');
     baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');

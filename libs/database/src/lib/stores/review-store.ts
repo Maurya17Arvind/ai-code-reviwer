@@ -55,9 +55,30 @@ export class ReviewStore {
         isActive: true,
         webhookSecretHash: true,
         connection: {
-          select: { id: true, provider: true, baseUrl: true, encryptedToken: true, tokenKeyId: true, deletedAt: true },
+          select: {
+            id: true,
+            provider: true,
+            baseUrl: true,
+            encryptedToken: true,
+            tokenKeyId: true,
+            installationId: true,
+            deletedAt: true,
+          },
         },
       },
+    });
+  }
+
+  /** GitHub webhook routing: the active repository behind (installation, GitHub repository id). */
+  async findGitHubRepository(installationId: number, githubRepositoryId: number) {
+    return this.prisma.repository.findFirst({
+      where: {
+        provider: 'GITHUB',
+        externalId: String(githubRepositoryId),
+        deletedAt: null,
+        connection: { provider: 'GITHUB', installationId: String(installationId), deletedAt: null },
+      },
+      select: { id: true, organizationId: true, isActive: true },
     });
   }
 

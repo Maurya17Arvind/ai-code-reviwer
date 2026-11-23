@@ -203,8 +203,13 @@ model ProviderConnection {
   name           String          @db.VarChar(200)
   /// Validated against the SSRF policy when created and before use.
   baseUrl        String          @map("base_url") @db.VarChar(2048)
-  encryptedToken Json            @map("encrypted_token")
-  tokenKeyId     String          @map("token_key_id") @db.VarChar(32)
+  /// GitLab: envelope-encrypted token. GitHub App connections hold no per-connection secret.
+  encryptedToken Json?           @map("encrypted_token")
+  tokenKeyId     String?         @map("token_key_id") @db.VarChar(32)
+  /// GitHub App installation id (one installation belongs to exactly one organization).
+  installationId String?         @map("installation_id") @db.VarChar(50)
+  /// GitHub account (org/user) the app is installed on.
+  accountLogin   String?         @map("account_login") @db.VarChar(100)
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt      DateTime?       @map("deleted_at") @db.Timestamptz(3)
@@ -213,6 +218,7 @@ model ProviderConnection {
   repositories Repository[]
 
   @@unique([organizationId, provider, name])
+  @@unique([provider, installationId])
   @@map("provider_connections")
 }
 

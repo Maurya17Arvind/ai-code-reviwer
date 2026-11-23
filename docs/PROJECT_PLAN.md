@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 4 complete — awaiting approval for Phase 5.** Last updated: 2026-11-23.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23).
+> Status: **Phase 5 complete — awaiting approval for Phase 6.** Last updated: 2026-11-23.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23).
 
 ## 1. Phase overview
 
@@ -354,3 +354,57 @@ Branch: `feature/phase-4-gitlab` (based on `feature/phase-3-ai-review-engine`).
 - **Manual review triggers** (a comment command or the API) are not implemented. Reviews start from webhooks only.
 - **Dismissing findings on GitLab:** resolving a thread by hand does not yet mark the finding `DISMISSED`.
   That needs note/discussion events, planned for Phase 7 together with the dashboard.
+
+## 10. Phase 5 results (2026-11-23)
+
+Branch: `feature/phase-5-github` (based on `feature/phase-4-gitlab`).
+
+### 10.1 Roadmap items
+
+| Roadmap item                  | Delivered                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub App authentication     | RS256 App JWT (`node:crypto`), installation tokens per job scoped to one repository and contents:read / pull_requests:write / metadata:read, cached in memory (ADR-029) |
+| Installation & repo discovery | `admin.js connect-github --org --installation`: verifies the installation, stores the connection (no secret), registers repositories, deactivates revoked ones          |
+| Webhook processing            | `POST /api/webhooks/github`: HMAC over the raw body, installation-based routing, PR action filter, replay protection, installation lifecycle sync (ADR-030)             |
+| Fetch PR changes              | `GitHubProvider`: PR + merge base (compare API), paginated files → shared diff model (binary / withheld patches flagged, unsafe paths dropped), raw files at SHA        |
+| Trigger reviews               | Same `reviews` queue; job `provider` is now `gitlab` or `github`; worker picks the adapter through `HostedProviderFactory`                                              |
+| Publish review comments       | PR review comments on diff lines (`line`, `side: RIGHT`, head commit); 422 → summary fallback                                                                           |
+| Publish summaries             | One issue comment per PR, updated in place                                                                                                                              |
+| Track findings / new commits  | Shared with GitLab: lifecycle per fingerprint; fixed findings resolve the review thread via GraphQL; superseded commits skipped; head re-checked before publishing      |
+
+### 10.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **24 projects**. **287 unit tests** pass, 1 skipped.
+- `pnpm test:integration`: **81 tests** pass. New in this phase:
+  - **Worker end to end, GitHub (5):** real worker and PostgreSQL against the fake GitHub App server (REST + GraphQL),
+    fake AI reviewer. Covers the review comment on the right line plus one summary, repository-scoped token grants,
+    idempotent re-run, superseded commit, the fixed commit resolving the thread and updating the same summary, and
+    refusal of a provider-mismatched job.
+  - **API webhook + connect-github (7):** real HTTP covering connect-github (no stored secret), refusal to claim an
+    installation owned by another organization, queued and duplicate deliveries, 401 for missing / wrong /
+    re-serialised signatures, ignored events, auto-registration of a new repository, `installation_repositories`
+    sync and uninstall.
+  - **GitHub adapter (11, unit tier):** against the fake server — JWT auth and wrong-key rejection, token scope and
+    caching, out-of-scope repository, file mapping, raw files, positions, GraphQL resolve, summary upsert, rate-limit
+    retry, SSRF refusal.
+- The GitLab suite still passes unchanged after the worker was generalised.
+- The built `api` bundle starts (GitHub webhook answers 404 while unconfigured) and `admin.js connect-github` runs.
+- **Not verified against real GitHub.** No GitHub App is registered for this machine. See [GITHUB.md](./GITHUB.md).
+
+### 10.3 Deviations and decisions
+
+| Item            | Decision                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| GitHub client   | Small typed `fetch` client instead of Octokit (supersedes the ADR-027 note) — ADR-029                              |
+| Credentials     | No per-connection secret for GitHub; schema allows null token with a CHECK constraint per provider                 |
+| Webhook routing | One App URL; routing by signed installation + repository id; new repositories auto-registered — ADR-030            |
+| Shared errors   | `ProviderApiError` / `InlinePositionRejectedError` moved to `git-providers-core`; retry policy is provider-neutral |
+| Worker service  | `MergeRequestReviewService` is provider-agnostic; adapters are built by `HostedProviderFactory`                    |
+| Drafts          | Draft PRs are reviewed (as for GitLab); `ready_for_review` also triggers a review                                  |
+
+### 10.4 Known limitations / follow-ups
+
+- **Real GitHub verification** needs a registered App, an installation and a public URL (tunnel).
+- The PR files API is capped at 3,000 files by GitHub; larger PRs are reviewed partially.
+- Manual thread resolution does not yet dismiss findings (Phase 7, with the dashboard).
+- Rate limiting of the webhook endpoint and a pinned-address agent against DNS rebinding remain Phase 8 items.

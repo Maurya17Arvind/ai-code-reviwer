@@ -10,19 +10,19 @@ import {
   defaultReviewConfig,
 } from '@acra/configuration';
 import { ReviewStore, type TenantContext } from '@acra/database';
-import { GitProviderError, type ReviewRequest } from '@acra/git-providers-core';
 import {
-  GitLabApiError,
-  type GitLabProvider,
-  gitLabProviderFromConnection,
+  GitProviderError,
+  type HostedGitProvider,
   InlinePositionRejectedError,
-} from '@acra/git-providers-gitlab';
+  ProviderApiError,
+  type ReviewRequest,
+} from '@acra/git-providers-core';
 import { executePublication, planPublication } from '@acra/publishing';
 import { type ReviewMergeRequestJob, ReviewMergeRequestJobSchema } from '@acra/queue';
 import { buildReviewContext } from '@acra/repository-context';
-import { parseMasterKey } from '@acra/security';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { REVIEWER_FACTORY, WORKER_CONFIG, type WorkerConfig } from '../worker-config';
+import { HostedProviderFactory, ProviderConfigurationError } from './hosted-provider.factory';
 
 export type ReviewOutcome =
   | {
@@ -47,8 +47,9 @@ export class PermanentReviewError extends Error {
 const TERMINAL = new Set(['COMPLETED', 'PARTIAL', 'SUPERSEDED', 'SKIPPED']);
 
 /**
- * Reviews one GitLab merge request at one head commit (the worker side of Modules B, D, E, F).
- * Idempotent: re-running the same job never posts duplicate comments.
+ * Reviews one merge request / pull request at one head commit (the worker side of Modules B, D, E, F),
+ * for any hosted provider (GitLab, GitHub). Idempotent: re-running the same job never posts duplicate
+ * comments.
  */
 @Injectable()
 export class MergeRequestReviewService {
@@ -58,6 +59,7 @@ export class MergeRequestReviewService {
     @Inject(ReviewStore) private readonly store: ReviewStore,
     @Inject(WORKER_CONFIG) private readonly config: WorkerConfig,
     @Inject(REVIEWER_FACTORY) private readonly createReviewers: ReviewerFactory,
+    @Inject(HostedProviderFactory) private readonly providers: HostedProviderFactory,
   ) {}
 
   async run(rawJob: unknown): Promise<ReviewOutcome> {
@@ -69,13 +71,13 @@ export class MergeRequestReviewService {
     if (!repository || repository.organizationId !== job.organizationId) {
       throw new PermanentReviewError('repository_not_found', 'Repository not found for this organization');
     }
-    if (
-      !repository.isActive ||
-      !repository.connection ||
-      repository.connection.deletedAt ||
-      repository.provider !== 'GITLAB'
-    ) {
-      return { status: 'skipped', reason: 'repository inactive or not connected to GitLab' };
+    const expectedProvider = job.provider === 'github' ? 'GITHUB' : 'GITLAB';
+    if (repository.provider !== expectedProvider) {
+      throw new PermanentReviewError('provider_mismatch', 'Job provider does not match the repository');
+    }
+    const connection = repository.connection;
+    if (!repository.isActive || !connection || connection.deletedAt) {
+      return { status: 'skipped', reason: 'repository inactive or not connected' };
     }
     const tenant: TenantContext = { organizationId: repository.organizationId };
 
@@ -83,7 +85,7 @@ export class MergeRequestReviewService {
       repositoryId: repository.id,
       requestId: job.requestId,
       headSha: job.headSha,
-      idempotencyKey: `gitlab:${repository.id}:${job.requestId}:${job.headSha}`,
+      idempotencyKey: `${job.provider}:${repository.id}:${job.requestId}:${job.headSha}`,
     });
     if (!session.created && TERMINAL.has(session.status)) {
       return { status: 'duplicate', sessionId: session.id, reason: `already ${session.status.toLowerCase()}` };
@@ -91,20 +93,17 @@ export class MergeRequestReviewService {
     await this.store.updateSessionStatus(tenant, session.id, 'RUNNING');
 
     try {
-      return await this.review(
-        job,
-        tenant,
-        session.id,
-        repository.id,
-        repository.connection,
-        Number(repository.externalId),
-      );
+      const provider = await this.providers.forRepository({ ...repository, connection }).catch((error: unknown) => {
+        if (error instanceof ProviderConfigurationError) throw new PermanentReviewError(error.code, error.message);
+        throw error;
+      });
+      return await this.review(job, tenant, session.id, repository.id, provider);
     } catch (error) {
       const code =
         error instanceof PermanentReviewError
           ? error.code
-          : error instanceof GitLabApiError
-            ? `gitlab_${error.status}`
+          : error instanceof ProviderApiError
+            ? `${job.provider}_${error.status}`
             : 'review_failed';
       await this.store.updateSessionStatus(tenant, session.id, 'FAILED', {
         errorCode: code,
@@ -119,30 +118,19 @@ export class MergeRequestReviewService {
     tenant: TenantContext,
     sessionId: string,
     repositoryId: string,
-    connection: { id: string; baseUrl: string; encryptedToken: unknown },
-    projectId: number,
+    host: HostedGitProvider,
   ): Promise<ReviewOutcome> {
-    if (!Number.isInteger(projectId) || projectId <= 0)
-      throw new PermanentReviewError('invalid_project', 'Repository has no GitLab project id');
-    const gitlab = gitLabProviderFromConnection(connection, projectId, {
-      masterKey: parseMasterKey(this.config.CREDENTIALS_MASTER_KEY),
-      policy: {
-        allowedHosts: this.config.GITLAB_ALLOWED_HOSTS,
-        allowPrivateNetwork: this.config.GITLAB_ALLOW_PRIVATE_NETWORK,
-      },
-    });
-
-    const mr = await gitlab.getReviewRequest(job.requestId);
+    const mr = await host.getReviewRequest(job.requestId);
     if (mr.state !== 'opened') return this.finish(tenant, sessionId, 'SKIPPED', `merge request is ${mr.state}`);
     if (mr.refs.headSha !== job.headSha)
       return this.finish(tenant, sessionId, 'SUPERSEDED', 'a newer commit was pushed');
     await this.store.updateSessionStatus(tenant, sessionId, 'RUNNING', { baseSha: mr.refs.baseSha });
 
-    const config = await this.loadConfig(gitlab, mr);
+    const config = await this.loadConfig(host, mr);
     if (!config.review.enabled) return this.finish(tenant, sessionId, 'SKIPPED', 'review.enabled is false');
 
-    const changeSet = await gitlab.getReviewRequestChanges(mr);
-    const context = await buildReviewContext(changeSet, gitlab, {
+    const changeSet = await host.getReviewRequestChanges(mr);
+    const context = await buildReviewContext(changeSet, host, {
       exclude: [...DEFAULT_EXCLUDE_GLOBS, ...config.review.exclude],
       budget: config.review.context,
     });
@@ -178,13 +166,13 @@ export class MergeRequestReviewService {
     });
 
     // A newer commit may have arrived while the models were thinking: never publish stale results.
-    const latest = await gitlab.getReviewRequest(mr.id);
+    const latest = await host.getReviewRequest(mr.id);
     if (latest.refs.headSha !== mr.refs.headSha)
       return this.finish(tenant, sessionId, 'SUPERSEDED', 'a newer commit arrived during the review');
 
-    const existing = await gitlab.listComments(mr.id);
+    const existing = await host.listComments(mr.id);
     const plan = planPublication(report, context, existing, config.review.publishing);
-    const published = await executePublication(gitlab, mr.id, mr.refs, report, plan, {
+    const published = await executePublication(host, mr.id, mr.refs, report, plan, {
       summary: config.review.publishing.summary,
       isPositionRejection: (error) => error instanceof InlinePositionRejectedError,
     });
@@ -248,8 +236,8 @@ export class MergeRequestReviewService {
   }
 
   /** Reads ai-review.yaml at the reviewed commit. Untrusted: a broken file fails permanently. */
-  private async loadConfig(gitlab: GitLabProvider, mr: ReviewRequest): Promise<ReviewConfig> {
-    const file = await gitlab.readFile(REVIEW_CONFIG_FILENAME, { kind: 'commit', sha: mr.refs.headSha });
+  private async loadConfig(host: HostedGitProvider, mr: ReviewRequest): Promise<ReviewConfig> {
+    const file = await host.readFile(REVIEW_CONFIG_FILENAME, { kind: 'commit', sha: mr.refs.headSha });
     if (!file) return defaultReviewConfig();
     if (file.isBinary || file.tooLarge)
       throw new PermanentReviewError('config_invalid', `${REVIEW_CONFIG_FILENAME} is not a readable text file`);
@@ -277,7 +265,7 @@ export class MergeRequestReviewService {
 /** Transient failures BullMQ should retry with backoff; everything else fails permanently. */
 export function isRetryable(error: unknown): boolean {
   if (error instanceof PermanentReviewError) return false;
-  if (error instanceof GitLabApiError) return error.status === 0 || error.status === 429 || error.status >= 500;
+  if (error instanceof ProviderApiError) return error.retryable;
   if (error instanceof GitProviderError) return /not ready/.test(error.message);
   return false;
 }

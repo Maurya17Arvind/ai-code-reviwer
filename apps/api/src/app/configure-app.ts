@@ -6,10 +6,13 @@ import { type ApiConfig } from './api-config';
 
 export const GLOBAL_PREFIX = 'api';
 
+/** NestFactory options shared by main.ts and tests: raw bodies are kept for webhook signatures. */
+export const APP_OPTIONS = { bufferLogs: true, rawBody: true } as const;
+
 /** HTTP hardening shared by main.ts and the integration tests, so tests exercise the real setup. */
 export function configureApp(app: INestApplication, config: ApiConfig): void {
   app.useLogger(app.get(Logger));
-  // GitLab MR webhook payloads exceed the 100 kB default; cap at 2 MB.
+  // Webhook payloads exceed the 100 kB default; cap at 2 MB (rawBody is kept for HMAC checks).
   (app as NestExpressApplication).useBodyParser('json', { limit: '2mb' });
   app.use(helmet());
   app.enableCors({

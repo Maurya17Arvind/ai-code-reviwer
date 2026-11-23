@@ -24,7 +24,7 @@ export const ReviewJobName = {
 export const ReviewMergeRequestJobSchema = z.object({
   organizationId: z.uuid(),
   repositoryId: z.uuid(),
-  provider: z.literal('gitlab'),
+  provider: z.enum(['gitlab', 'github']),
   requestId: z.int().positive(),
   headSha: z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/),
   deliveryId: z.string().min(1).max(200),

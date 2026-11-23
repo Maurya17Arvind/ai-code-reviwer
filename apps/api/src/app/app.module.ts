@@ -10,6 +10,8 @@ import { type ApiConfig, API_CONFIG } from './api-config';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { HealthController } from './health/health.controller';
 import { HEALTH_PROBE_TIMEOUT_MS, HealthService } from './health/health.service';
+import { GitHubWebhookController } from './webhooks/github-webhook.controller';
+import { GitHubWebhookService } from './webhooks/github-webhook.service';
 import { GitLabWebhookController } from './webhooks/gitlab-webhook.controller';
 import { GitLabWebhookService } from './webhooks/gitlab-webhook.service';
 
@@ -39,13 +41,14 @@ export class AppModule {
         DatabaseModule.forRoot({ databaseUrl: config.DATABASE_URL }),
         QueueModule.forRoot({ redisUrl: config.REDIS_URL, role: 'producer' }),
       ],
-      controllers: [HealthController, GitLabWebhookController],
+      controllers: [HealthController, GitLabWebhookController, GitHubWebhookController],
       providers: [
         { provide: API_CONFIG, useValue: config },
         { provide: HEALTH_PROBE_TIMEOUT_MS, useValue: 2_000 },
         { provide: APP_FILTER, useClass: AllExceptionsFilter },
         HealthService,
         GitLabWebhookService,
+        GitHubWebhookService,
       ],
     };
   }

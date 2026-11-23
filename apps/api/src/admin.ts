@@ -5,14 +5,25 @@
  *
  *   GITLAB_TOKEN=... node dist/apps/api/admin.js connect-gitlab --org acme --project group/app
  *
- * The GitLab token is read from GITLAB_TOKEN (never from argv, which is visible in process lists).
+ *   node dist/apps/api/admin.js connect-github --org acme --installation 12345678
+ *
+ * The GitLab token is read from GITLAB_TOKEN (never from argv, which is visible in process lists);
+ * the GitHub App key from GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH.
  */
 import 'reflect-metadata';
-import { ConfigValidationError, GitProviderEnvSchema, loadDotEnvFile, loadEnv } from '@acra/configuration';
+import {
+  ConfigValidationError,
+  GitHubAppEnvSchema,
+  GitProviderEnvSchema,
+  loadDotEnvFile,
+  loadEnv,
+  resolveGitHubAppSettings,
+} from '@acra/configuration';
 import { ConnectionStore, createPrismaClient, ReviewStore } from '@acra/database';
 import { parseMasterKey } from '@acra/security';
 import { Command } from 'commander';
 import * as z from 'zod';
+import { connectGitHubInstallation } from './admin/connect-github';
 import { connectGitLabProject } from './admin/connect-gitlab';
 
 const AdminEnvSchema = GitProviderEnvSchema.extend({
@@ -86,6 +97,40 @@ program
       }
     },
   );
+
+const GitHubAdminEnvSchema = GitHubAppEnvSchema.extend({ DATABASE_URL: z.string().min(1) });
+
+program
+  .command('connect-github')
+  .description('connect a GitHub App installation: verify it and register the repositories it can access')
+  .requiredOption('--org <slug>', 'organization slug (created if missing)')
+  .option('--org-name <name>', 'organization display name (when created)')
+  .requiredOption('--installation <id>', 'GitHub App installation id (from the installation settings URL)')
+  .action(async (options: { org: string; orgName?: string; installation: string }) => {
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(options.org)) throw new Error('--org must be a lower-case slug');
+    if (!/^\d{1,15}$/.test(options.installation)) throw new Error('--installation must be numeric');
+    loadDotEnvFile();
+    const env = loadEnv(GitHubAdminEnvSchema);
+    const app = resolveGitHubAppSettings(env);
+    if (!app) throw new Error('GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY(_PATH) must be set');
+    const prisma = createPrismaClient({ databaseUrl: env.DATABASE_URL, poolMax: 2 });
+    try {
+      const result = await connectGitHubInstallation(
+        { connections: new ConnectionStore(prisma), app },
+        {
+          organizationSlug: options.org,
+          organizationName: options.orgName ?? options.org,
+          installationId: Number(options.installation),
+        },
+      );
+      process.stdout.write(
+        `Connected installation ${options.installation} (${result.accountLogin}) → connection ${result.connectionId}\n` +
+          `Repositories (${result.repositories.length}): ${result.repositories.join(', ') || 'none'}\n`,
+      );
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   process.stderr.write(

@@ -9,3 +9,27 @@ export class GitProviderError extends Error {
     this.name = 'GitProviderError';
   }
 }
+
+/** HTTP-level failure from a hosted provider API (GitLab, GitHub). Never contains tokens. */
+export class ProviderApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ProviderApiError';
+  }
+
+  /** Network errors (status 0), rate limits and server errors are worth retrying. */
+  get retryable(): boolean {
+    return this.status === 0 || this.status === 429 || this.status >= 500;
+  }
+}
+
+/** The provider rejected an inline comment position; publishers fall back to the summary. */
+export class InlinePositionRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InlinePositionRejectedError';
+  }
+}

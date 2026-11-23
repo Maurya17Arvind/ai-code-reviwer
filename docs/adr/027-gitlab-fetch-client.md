@@ -24,5 +24,8 @@ handling.
 
 ## Consequences
 
-New endpoints need a few lines each. GitHub (Phase 5) uses Octokit, because GitHub App authentication
-(JWT → installation token) is complex. The same outbound policy is applied through Octokit's `request.fetch`.
+New endpoints need a few lines each.
+
+**Update (Phase 5):** the plan to use Octokit for GitHub was dropped. GitHub uses the same kind of small
+`fetch` client, and App authentication (JWT → installation token) turned out to need only `node:crypto`.
+See ADR-029.

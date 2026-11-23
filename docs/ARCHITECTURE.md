@@ -56,7 +56,7 @@ libs/
 │   ├── core/             ✅ Phase 2 — provider ports (RepositoryReader), diff model, errors
 │   ├── local/            ✅ Phase 2 — read-only LocalGitProvider (git CLI via simple-git, hardened)
 │   ├── gitlab/           ✅ Phase 4 — typed REST client (SSRF-guarded), MR source + publisher, connection helper
-│   └── github/           ⏳ Phase 5
+│   └── github/           ✅ Phase 5 — App auth (JWT → repo-scoped installation tokens), REST/GraphQL client, PR source + publisher
 ├── repository-context/   ✅ Phase 2 — unified-diff parser, path filter, review context builder, context hash
 │
 ├── agent-core/           ✅ Phase 3 — LangGraph review graph (parallel reviewers via Send), tracing guard
@@ -131,7 +131,7 @@ The brief's single `GitProvider` interface is split into capability ports in `@a
 | ----------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
 | `FileContentReader`                       | `readFile(path, revision)`. The narrow port that domain services depend on | Local ✅, GitLab/GitHub (Phases 4–5) |
 | `RepositoryReader`                        | + `getRepositoryInfo()`, `getChangeSet(scope)`, `getCommitDetails(ref)`    | Local ✅, GitLab/GitHub (Phases 4–5) |
-| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab ✅, GitHub (Phase 5)          |
+| `ReviewRequestSource` / `ReviewPublisher` | MR/PR details, existing comments, inline and summary publishing            | GitLab ✅, GitHub ✅                 |
 | `RepositoryWriter`                        | Branch, push, create MR/PR. **Approval-gated**                             | Phase 6                              |
 
 The provider-neutral diff model (`ChangedFile → DiffHunk → DiffLine` with old/new line numbers) is produced by
@@ -213,7 +213,7 @@ Invariants:
 | LangGraph / @langchain/core                 | 1.7.5 / 1.5.0                                                  | Orchestration only (ADR-004); LangSmith tracing force-disabled (ADR-023)  |
 | @anthropic-ai/sdk / openai                  | 1.12.0 / 7.62.0                                                | Claude `claude-opus-5-5` default; GPT model must be configured (ADR-024)  |
 | simple-git / yaml / picomatch               | 4.1.0 / 2.9.1 / 4.0.7                                          | Phase 2: local git (strict mode), ai-review.yaml parsing, exclusion globs |
-| gitbeaker / Octokit                         | 44.1.10 / 16.x                                                 | **Not installed yet** — Phases 4, 5                                       |
+| gitbeaker / Octokit                         | —                                                              | Not used: small typed `fetch` clients for GitLab and GitHub (ADR-027/029) |
 
 ### Known compatibility items
 

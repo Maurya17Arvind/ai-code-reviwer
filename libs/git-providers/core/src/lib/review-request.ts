@@ -1,4 +1,4 @@
-import { type ChangeSet } from './repository-reader';
+import { type ChangeSet, type FileContentReader } from './repository-reader';
 
 /**
  * Ports for hosted Git providers (GitLab now, GitHub in Phase 5). Split by capability (ADR-019):
@@ -64,3 +64,6 @@ export interface ReviewPublisher {
   upsertSummary(requestId: number, body: string, existingNoteId?: string): Promise<{ noteId: string }>;
   resolveDiscussion(requestId: number, discussionId: string): Promise<void>;
 }
+
+/** Everything the review worker needs from a hosted provider for one repository. */
+export type HostedGitProvider = ReviewRequestSource & ReviewPublisher & FileContentReader;

@@ -4,9 +4,10 @@ A standalone, multi-tenant code review platform. Claude and GPT independently re
 repositories, GitLab merge requests and GitHub pull requests. A deterministic validation layer decides what gets
 published, and every code or Git change requires human approval. Merging is never automated.
 
-> **Status: Phase 4 (GitLab) complete.** Merge requests are reviewed automatically via webhooks: inline comments,
-> one summary note, resolved threads on fixes, full history in PostgreSQL. Local CLI reviews since Phase 3.
-> See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/GITLAB.md](docs/GITLAB.md) and [docs/CLI.md](docs/CLI.md).
+> **Status: Phase 5 (GitHub App) complete.** GitLab merge requests and GitHub pull requests are reviewed
+> automatically via webhooks: inline comments, one summary, resolved threads on fixes, full history in PostgreSQL.
+> Local CLI reviews since Phase 3. See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/GITLAB.md](docs/GITLAB.md),
+> [docs/GITHUB.md](docs/GITHUB.md) and [docs/CLI.md](docs/CLI.md).
 
 ## Stack
 
@@ -59,6 +60,7 @@ Full instructions: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 | Document                                          | Contents                                                        |
 | ------------------------------------------------- | --------------------------------------------------------------- |
 | [GITLAB.md](docs/GITLAB.md)                       | GitLab setup: token, connect command, webhooks                  |
+| [GITHUB.md](docs/GITHUB.md)                       | GitHub App setup: permissions, connect command, webhook         |
 | [CLI.md](docs/CLI.md)                             | `ai-review` commands, scopes and exit codes                     |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md)           | System design, module boundaries, conventions, version baseline |
 | [adr/](docs/adr/README.md)                        | Architecture decision records                                   |

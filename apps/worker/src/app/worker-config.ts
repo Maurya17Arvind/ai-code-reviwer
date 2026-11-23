@@ -1,8 +1,10 @@
-import { AiEnvSchema, GitProviderEnvSchema, WorkerEnvSchema } from '@acra/configuration';
+import { AiEnvSchema, GitHubAppEnvSchema, GitProviderEnvSchema, WorkerEnvSchema } from '@acra/configuration';
 import type * as z from 'zod';
 
 /** Full worker configuration: runtime + AI providers + Git provider access. */
-export const WorkerConfigSchema = WorkerEnvSchema.extend(AiEnvSchema.shape).extend(GitProviderEnvSchema.shape);
+export const WorkerConfigSchema = WorkerEnvSchema.extend(AiEnvSchema.shape)
+  .extend(GitProviderEnvSchema.shape)
+  .extend(GitHubAppEnvSchema.shape);
 export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 
 export const WORKER_CONFIG = Symbol('WORKER_CONFIG');

@@ -1,3 +1,4 @@
+import { ProviderApiError } from '@acra/git-providers-core';
 import { assertSafeOutboundUrl, type OutboundPolicy } from '@acra/security';
 
 export interface GitLabClientOptions {
@@ -15,12 +16,9 @@ export interface GitLabClientOptions {
 }
 
 /** Error from the GitLab API. The message never contains the token or request body. */
-export class GitLabApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
+export class GitLabApiError extends ProviderApiError {
+  constructor(status: number, message: string) {
+    super(status, message);
     this.name = 'GitLabApiError';
   }
 }

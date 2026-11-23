@@ -39,7 +39,8 @@
       "@acra/ai-providers-ollama": ["./libs/ai-providers/ollama/src/index.ts"],
       "@acra/git-providers-gitlab": ["./libs/git-providers/gitlab/src/index.ts"],
       "@acra/publishing": ["./libs/publishing/src/index.ts"],
-      "@acra/ai-providers-factory": ["./libs/ai-providers/factory/src/index.ts"]
+      "@acra/ai-providers-factory": ["./libs/ai-providers/factory/src/index.ts"],
+      "@acra/git-providers-github": ["./libs/git-providers/github/src/index.ts"]
     },
     "exactOptionalPropertyTypes": true
   },

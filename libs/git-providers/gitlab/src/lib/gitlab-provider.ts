@@ -6,6 +6,7 @@ import {
   type FileContent,
   type FileContentReader,
   GitProviderError,
+  InlinePositionRejectedError,
   type InlineCommentInput,
   type ReviewPublisher,
   type ReviewRequest,
@@ -58,13 +59,7 @@ export interface GitLabProject {
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
-/** Thrown when GitLab rejects an inline position; the publisher falls back to the summary. */
-export class InlinePositionRejectedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InlinePositionRejectedError';
-  }
-}
+export { InlinePositionRejectedError };
 
 /**
  * GitLab adapter: ReviewRequestSource + ReviewPublisher + FileContentReader for one project.

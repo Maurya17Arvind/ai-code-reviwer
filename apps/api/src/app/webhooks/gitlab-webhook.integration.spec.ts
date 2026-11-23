@@ -9,7 +9,7 @@ import { Queue } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { connectGitLabProject } from '../../admin/connect-gitlab';
 import { AppModule } from '../app.module';
-import { configureApp } from '../configure-app';
+import { APP_OPTIONS, configureApp } from '../configure-app';
 
 const HEAD = 'c'.repeat(40);
 
@@ -74,7 +74,7 @@ describe('GitLab webhook intake + connect-gitlab (API + PostgreSQL + Redis + fak
     gitlab = await new FakeGitLab().start();
     const config = loadEnv(ApiEnvSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
     prisma = createPrismaClient({ databaseUrl: config.DATABASE_URL, poolMax: 2 });
-    app = await NestFactory.create(AppModule.forRoot(config), { bufferLogs: true });
+    app = await NestFactory.create(AppModule.forRoot(config), APP_OPTIONS);
     configureApp(app, config);
     await app.listen(0, '127.0.0.1');
     baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');

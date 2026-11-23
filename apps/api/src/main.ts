@@ -1,15 +1,16 @@
 import 'reflect-metadata';
-import { ApiEnvSchema, ConfigValidationError, loadDotEnvFile, loadEnv } from '@acra/configuration';
+import { ConfigValidationError, loadDotEnvFile, loadEnv } from '@acra/configuration';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app/app.module';
-import { configureApp, GLOBAL_PREFIX } from './app/configure-app';
+import { ApiConfigSchema } from './app/api-config';
+import { APP_OPTIONS, configureApp, GLOBAL_PREFIX } from './app/configure-app';
 
 async function bootstrap(): Promise<void> {
   loadDotEnvFile();
-  const config = loadEnv(ApiEnvSchema);
+  const config = loadEnv(ApiConfigSchema);
 
-  const app = await NestFactory.create(AppModule.forRoot(config), { bufferLogs: true });
+  const app = await NestFactory.create(AppModule.forRoot(config), APP_OPTIONS);
   configureApp(app, config);
   await app.listen(config.API_PORT, config.API_HOST);
 

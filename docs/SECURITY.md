@@ -87,6 +87,21 @@ Residual risks (Phase 8):
 - the webhook endpoint has no rate limiting yet;
 - the master key comes from an environment variable (planned: a KMS).
 
+## 2d. Controls implemented in Phase 5 (GitHub App)
+
+| Control                                                                                                                       | Where                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| GitHub App only (no PATs); App permissions limited to contents:read, pull_requests:write, metadata:read                       | docs/GITHUB.md (ADR-029)                                   |
+| Per-job installation tokens scoped to the single reviewed repository and the minimal permissions; cached in memory only       | `GitHubAppAuth`, `HostedProviderFactory`                   |
+| No secret stored per GitHub connection; App private key only in the worker/admin environment, never given to the API          | `resolveGitHubAppSettings`, `ApiConfigSchema`              |
+| Webhook HMAC-SHA256 verified over the raw body in constant time before parsing; 404 when unconfigured                         | `verifyWebhookSignature`, `GitHubWebhookService` (ADR-030) |
+| Routing only by signed installation + repository ids, only for operator-connected installations; one organization per install | `findGitHubRepository`, `saveGitHubConnection`             |
+| Uninstall / suspend / repository removal deactivates access immediately; audited                                              | `GitHubWebhookService`                                     |
+| Replay protection on `X-GitHub-Delivery`; idempotent jobs and sessions per head SHA                                           | `webhook_deliveries`, `reviewJobId`                        |
+| Same outbound discipline as GitLab: SSRF policy, no redirects, same-origin `Link` pagination, size caps, bounded retries      | `GitHubClient`                                             |
+| Duplicate markers trusted only on comments by the App's bot login; model text escaped, @mentions neutralised                  | `GitHubProvider.listComments`, `publishing/sanitize.ts`    |
+| Job provider must match the repository's provider                                                                             | `MergeRequestReviewService`                                |
+
 ### Development-only relaxations (must not reach production)
 
 - `acra_app` has `CREATEDB` so `prisma migrate dev` can create a shadow database. Production roles: no `CREATEDB`; migrations via `migrate deploy`.
@@ -96,7 +111,6 @@ Residual risks (Phase 8):
 
 | Control                                                                                                      | Phase |
 | ------------------------------------------------------------------------------------------------------------ | ----- |
-| Webhook signature verification (GitHub `X-Hub-Signature-256`, GitLab token), replay protection               | 4–5   |
 | SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks) | 4     |
 | Envelope-encrypted credentials (ADR-011)                                                                     | 4     |
 | Approval workflow: SHA-bound, expiring, patch-hash-bound approvals; merge never implemented                  | 6     |

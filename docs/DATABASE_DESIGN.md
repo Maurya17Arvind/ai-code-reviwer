@@ -55,6 +55,16 @@ Tenant-scoped access goes through `ReviewStore` / `ConnectionStore`. Their metho
 filter by `organization_id` (ADR-010). The webhook path resolves the repository by id first, as the trust
 anchor, then switches to tenant scope.
 
+## 2c. Implemented in Phase 5 (`phase5_github_app`)
+
+| Table                  | Change                                                                                                     | Constraints / indexes                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `provider_connections` | + `installation_id`, `account_login`; `encrypted_token` / `token_key_id` now nullable (GitHub stores none) | unique `(provider, installation_id)`; CHECK `provider_connections_credentials_chk` (GitLab ⇒ token, GitHub ⇒ installation id) |
+
+GitHub repositories use `repositories.external_id` = GitHub repository id; `webhook_secret_hash` stays null
+(the App has one webhook secret, held by the API environment). Review tables are shared by both providers;
+idempotency keys are prefixed with the provider.
+
 ## 3. Target model (added in the phase that uses it)
 
 > Review tables moved from Phase 3 to Phase 4 (ADR-025): in Phase 3 only the local CLI runs reviews, and it stores
