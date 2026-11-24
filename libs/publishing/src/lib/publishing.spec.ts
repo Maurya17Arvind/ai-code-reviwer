@@ -225,6 +225,26 @@ describe('executePublication', () => {
     expect(result.comments.map((c) => c.kind)).toEqual(['inline', 'summary']);
   });
 
+  it('keeps the review when an old thread cannot be resolved', async () => {
+    const publisher = new RecordingPublisher();
+    publisher.resolveDiscussion = () => Promise.reject(new Error('Resource not accessible by integration'));
+    const r = report([finding({ id: 'a', fingerprint: FP(1), lineNumber: 3 })]);
+    const plan = {
+      ...planPublication(r, context, [], { inlineComments: true, summary: true }),
+      resolve: [{ fingerprint: FP(9), discussionId: 'PRRT_old' }],
+    };
+    const errors: string[] = [];
+    const result = await executePublication(publisher, 7, refs, r, plan, {
+      summary: true,
+      isPositionRejection: () => false,
+      onResolveError: (id) => errors.push(id),
+    });
+    expect(result.resolvedDiscussions).toEqual([]);
+    expect(result.unresolvedDiscussions).toEqual(['PRRT_old']);
+    expect(errors).toEqual(['PRRT_old']);
+    expect(result.comments.map((c) => c.kind)).toEqual(['inline', 'summary']);
+  });
+
   it('propagates unexpected publishing errors', async () => {
     const publisher = new RecordingPublisher();
     publisher.rejectLine = 3;

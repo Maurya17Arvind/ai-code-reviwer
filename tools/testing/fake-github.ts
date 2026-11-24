@@ -177,7 +177,7 @@ export class FakeGitHub {
       return paginate(res, url, repos, (items, total) => ({ total_count: total, repositories: items }));
     }
 
-    if (method === 'POST' && p === '/graphql') return this.graphql(res, body, canAccess);
+    if (method === 'POST' && p === '/graphql') return this.graphql(res, body, canAccess, grant.permissions);
 
     if (!(m = /^\/repos\/([^/]+)\/([^/]+)(\/.*)$/.exec(p))) return send(res, 404, { message: 'Not Found' });
     const repo = this.repos.get(`${decodeURIComponent(m[1] ?? '')}/${decodeURIComponent(m[2] ?? '')}`);
@@ -314,10 +314,20 @@ export class FakeGitHub {
     return send(res, 404, { message: 'Not Found' });
   }
 
-  private graphql(res: ServerResponse, body: Record<string, unknown>, canAccess: (repo: FakeGhRepo) => boolean): void {
+  private graphql(
+    res: ServerResponse,
+    body: Record<string, unknown>,
+    canAccess: (repo: FakeGhRepo) => boolean,
+    permissions: unknown,
+  ): void {
     const query = String(body['query'] ?? '');
     const variables = (body['variables'] ?? {}) as Record<string, unknown>;
     if (query.includes('resolveReviewThread')) {
+      // Real GitHub: an App can only resolve review threads with a contents:write token
+      // (verified against github.com on 2026-11-24; pull_requests:write alone is refused).
+      if (permissions && (permissions as Record<string, string>)['contents'] !== 'write') {
+        return send(res, 200, { errors: [{ message: 'Resource not accessible by integration' }] });
+      }
       const thread = [...this.repos.values()]
         .filter(canAccess)
         .flatMap((r) => r.threads)

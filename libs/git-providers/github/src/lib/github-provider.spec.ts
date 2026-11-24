@@ -153,7 +153,17 @@ describe('GitHub App adapter (against a fake GitHub server)', () => {
     const thread = comments.find((c) => c.body === 'b1');
     expect(thread).toMatchObject({ authoredByUs: true, resolvable: true, resolved: false });
     expect(thread?.discussionId).toMatch(/^PRRT_/);
-    await provider.resolveDiscussion(12, thread?.discussionId ?? '');
+    // GitHub refuses resolveReviewThread for an App token without contents:write (seen on github.com).
+    await expect(provider.resolveDiscussion(12, thread?.discussionId ?? '')).rejects.toThrow(
+      /Resource not accessible by integration/,
+    );
+    expect(repo.threads[0]?.isResolved).toBe(false);
+    // With a dedicated write-scoped client for thread resolution only, it works.
+    const withThreadClient = new GitHubProvider(auth.installationClient(77, [repo.id]), 'acme/shop', {
+      botLogin: await auth.botLogin(),
+      threadClient: auth.installationClient(77, [repo.id], WRITE_TOKEN_PERMISSIONS),
+    });
+    await withThreadClient.resolveDiscussion(12, thread?.discussionId ?? '');
     expect(repo.threads[0]?.isResolved).toBe(true);
   });
 

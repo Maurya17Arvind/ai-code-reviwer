@@ -17,6 +17,8 @@ export interface PublicationResult {
   /** Inline positions the provider rejected; those findings were moved to the summary. */
   readonly movedToSummary: ReviewFinding[];
   readonly resolvedDiscussions: string[];
+  /** Threads that should have been resolved but the provider refused (logged, not fatal). */
+  readonly unresolvedDiscussions: string[];
   readonly summaryNoteId?: string;
 }
 
@@ -30,7 +32,12 @@ export async function executePublication(
   refs: ReviewRequestRefs,
   report: ReviewReport,
   plan: PublicationPlan,
-  options: { readonly summary: boolean; readonly isPositionRejection: (error: unknown) => boolean },
+  options: {
+    readonly summary: boolean;
+    readonly isPositionRejection: (error: unknown) => boolean;
+    /** Called when an old thread could not be resolved; publishing continues. */
+    readonly onResolveError?: (discussionId: string, error: unknown) => void;
+  },
 ): Promise<PublicationResult> {
   const comments: PublishedComment[] = [];
   const movedToSummary: ReviewFinding[] = [];
@@ -53,10 +60,18 @@ export async function executePublication(
     }
   }
 
+  // Resolving old threads is cosmetic (finding status is tracked in the database), so a failure here
+  // must never discard the review that was just published.
   const resolvedDiscussions: string[] = [];
+  const unresolvedDiscussions: string[] = [];
   for (const { discussionId } of plan.resolve) {
-    await publisher.resolveDiscussion(requestId, discussionId);
-    resolvedDiscussions.push(discussionId);
+    try {
+      await publisher.resolveDiscussion(requestId, discussionId);
+      resolvedDiscussions.push(discussionId);
+    } catch (error) {
+      unresolvedDiscussions.push(discussionId);
+      options.onResolveError?.(discussionId, error);
+    }
   }
 
   let summaryNoteId: string | undefined;
@@ -67,5 +82,11 @@ export async function executePublication(
     comments.push({ kind: 'summary', noteId: summaryNoteId });
   }
 
-  return { comments, movedToSummary, resolvedDiscussions, ...(summaryNoteId ? { summaryNoteId } : {}) };
+  return {
+    comments,
+    movedToSummary,
+    resolvedDiscussions,
+    unresolvedDiscussions,
+    ...(summaryNoteId ? { summaryNoteId } : {}),
+  };
 }

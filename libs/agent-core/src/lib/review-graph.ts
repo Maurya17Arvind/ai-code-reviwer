@@ -208,10 +208,13 @@ function createReviewGraph(input: ReviewRunInput) {
   const finalize = (state: State): Update => {
     const finalizeStarted = performance.now();
     const timestamp = now().toISOString();
+    // A prior finding only counts as resolved when an AI reviewer actually looked at the code again.
+    // If every reviewer failed (quota, timeout, refusal), its absence proves nothing.
+    const anyReviewerSucceeded = state.executions.some((e) => e.status === 'succeeded');
     const reconciliation = reconcileFindings(
       input.priorFindings ?? [],
       new Set(state.merged.map((m) => m.fingerprint)),
-      new Set(input.context.files.map((f) => f.path)),
+      anyReviewerSucceeded ? new Set(input.context.files.map((f) => f.path)) : new Set<string>(),
     );
     const { findings, filtered } = selectFindings(state.merged, {
       minimumSeverity: input.settings.minimumSeverity,

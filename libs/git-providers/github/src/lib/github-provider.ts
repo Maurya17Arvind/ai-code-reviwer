@@ -85,7 +85,16 @@ export class GitHubProvider implements HostedGitProvider, RepositoryWriter {
   constructor(
     private readonly client: GitHubClient,
     fullName: string,
-    private readonly options: { readonly botLogin: string; readonly maxFileBytes?: number },
+    private readonly options: {
+      readonly botLogin: string;
+      readonly maxFileBytes?: number;
+      /**
+       * Client used only to resolve review threads. GitHub requires a contents:write token for
+       * `resolveReviewThread`, so review jobs pass a separate, lazily-minted write-scoped client here
+       * instead of widening the token used for everything else (ADR-029).
+       */
+      readonly threadClient?: GitHubClient;
+    },
   ) {
     const [owner, name, ...rest] = fullName.split('/');
     if (!owner || !name || rest.length > 0 || !/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(name)) {
@@ -303,7 +312,7 @@ export class GitHubProvider implements HostedGitProvider, RepositoryWriter {
 
   async resolveDiscussion(_number: number, threadId: string): Promise<void> {
     if (!threadId.startsWith('PRRT_')) return; // only GraphQL review-thread ids can be resolved
-    await this.client.graphql(RESOLVE_MUTATION, { threadId });
+    await (this.options.threadClient ?? this.client).graphql(RESOLVE_MUTATION, { threadId });
   }
 }
 

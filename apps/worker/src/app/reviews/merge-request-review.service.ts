@@ -192,6 +192,11 @@ export class MergeRequestReviewService {
     const published = await executePublication(host, mr.id, mr.refs, report, plan, {
       summary: config.review.publishing.summary,
       isPositionRejection: (error) => error instanceof InlinePositionRejectedError,
+      onResolveError: (discussionId, error) =>
+        this.logger.warn(
+          { repositoryId, requestId: mr.id, discussionId, err: error instanceof Error ? error.message : 'unknown' },
+          'Could not resolve a previous review thread; continuing',
+        ),
     });
 
     const publishedFingerprints = new Set([

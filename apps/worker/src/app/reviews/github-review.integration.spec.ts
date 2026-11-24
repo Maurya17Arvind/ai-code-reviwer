@@ -97,6 +97,7 @@ describe('GitHub pull request review (worker + PostgreSQL + fake GitHub App)', (
       ...process.env,
       GITHUB_APP_ID: github.appId,
       GITHUB_APP_PRIVATE_KEY: github.privateKeyPem,
+      GITHUB_APP_PRIVATE_KEY_PATH: undefined, // ignore a real key path from a developer .env
       GITHUB_API_URL: github.baseUrl,
       GITHUB_ALLOWED_HOSTS: '127.0.0.1',
       GITHUB_ALLOW_PRIVATE_NETWORK: 'true',

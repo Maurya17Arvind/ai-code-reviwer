@@ -222,6 +222,25 @@ describe('review graph (LangGraph pipeline)', () => {
     expect(second.filtered).toEqual(expect.arrayContaining([expect.objectContaining({ reason: 'false_positive' })]));
   });
 
+  it('only resolves prior findings when an AI reviewer actually reviewed the code again', async () => {
+    const prior = {
+      id: 'prior-1',
+      fingerprint: 'f'.repeat(64),
+      filePath: file.path,
+      status: 'published' as const,
+      createdAt: new Date().toISOString(),
+    };
+    const quota = new FakeReviewer('claude', () =>
+      Promise.reject(new AiProviderError('claude', 'quota_exceeded', 'Credit exhausted', false)),
+    );
+    const failed = await runReview(input([quota], { priorFindings: [prior] }));
+    expect(failed.executions[0]).toMatchObject({ status: 'failed', errorKind: 'quota_exceeded' });
+    expect(failed.resolved).toEqual([]);
+
+    const clean = await runReview(input([new FakeReviewer('claude', ok([]))], { priorFindings: [prior] }));
+    expect(clean.resolved).toEqual([expect.objectContaining({ id: 'prior-1' })]);
+  });
+
   it('runs static analysis alone when no AI reviewer is available', async () => {
     const report = await runReview(input([]));
     expect(report.status).toBe('failed');

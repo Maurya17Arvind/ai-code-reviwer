@@ -106,6 +106,11 @@ export class HostedProviderFactory {
       repository.fullName,
       {
         botLogin: await app.botLogin,
+        // Resolving review threads needs contents:write on GitHub. The token is only minted if a
+        // thread is actually resolved, and that client is used for nothing else.
+        ...(access === 'review'
+          ? { threadClient: app.auth.installationClient(installationId, [repositoryId], WRITE_TOKEN_PERMISSIONS) }
+          : {}),
       },
     );
   }
