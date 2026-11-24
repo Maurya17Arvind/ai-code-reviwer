@@ -4,6 +4,7 @@ import { ApprovalStore } from './stores/approval-store';
 import { AuthStore } from './stores/auth-store';
 import { ConnectionStore } from './stores/connection-store';
 import { InsightsStore } from './stores/insights-store';
+import { MaintenanceStore } from './stores/maintenance-store';
 import { OrganizationStore } from './stores/organization-store';
 import { ReviewStore } from './stores/review-store';
 import { PRISMA_CLIENT } from './tokens';
@@ -45,6 +46,7 @@ export class DatabaseModule {
         AuthStore,
         OrganizationStore,
         InsightsStore,
+        MaintenanceStore,
       ],
       exports: [
         PRISMA_CLIENT,
@@ -55,6 +57,7 @@ export class DatabaseModule {
         AuthStore,
         OrganizationStore,
         InsightsStore,
+        MaintenanceStore,
       ],
     };
   }

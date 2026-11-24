@@ -7,6 +7,8 @@ import { ApiConfigSchema } from './api-config';
 import { AppModule } from './app.module';
 import { APP_OPTIONS, configureApp } from './configure-app';
 
+const METRICS_TOKEN = 'metrics-token-for-tests-0123456789';
+
 /** Rate limits are stored in Redis and therefore shared by every API instance. */
 describe('Rate limiting (integration: Redis)', () => {
   const apps: INestApplication[] = [];
@@ -19,6 +21,7 @@ describe('Rate limiting (integration: Redis)', () => {
       TRUST_PROXY_HOPS: '1',
       RATE_LIMIT_ANONYMOUS_PER_MINUTE: '10',
       RATE_LIMIT_WEBHOOK_PER_MINUTE: '10',
+      METRICS_TOKEN: METRICS_TOKEN,
     });
     // Two API instances against the same Redis.
     for (let i = 0; i < 2; i++) {
@@ -62,6 +65,25 @@ describe('Rate limiting (integration: Redis)', () => {
       const response = await fetch(`${urls[0]}/api/health/live`, { headers: { 'X-Forwarded-For': ip } });
       expect(response.status).toBe(200);
     }
+  });
+
+  it('exposes Prometheus metrics only with the token, labelled by route template', async () => {
+    expect((await fetch(`${urls[0]}/api/metrics`)).status).toBe(401);
+    expect(
+      (await fetch(`${urls[0]}/api/metrics`, { headers: { Authorization: 'Bearer wrong-token-0123456789xx' } })).status,
+    ).toBe(401);
+    const orgId = randomUUID();
+    await fetch(`${urls[0]}/api/v1/organizations/${orgId}/findings`, { headers: { 'X-Forwarded-For': clientIp() } });
+    const response = await fetch(`${urls[0]}/api/metrics`, { headers: { Authorization: `Bearer ${METRICS_TOKEN}` } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/plain');
+    const text = await response.text();
+    expect(text).toContain(
+      'acra_http_requests_total{method="GET",route="/api/v1/organizations/:orgId/findings",status="401"}',
+    );
+    expect(text).toContain('acra_queue_jobs{queue="reviews",state="waiting"}');
+    expect(text).toContain('acra_http_request_duration_seconds_bucket');
+    expect(text).not.toContain(orgId);
   });
 
   it('gives webhooks their own budget', async () => {

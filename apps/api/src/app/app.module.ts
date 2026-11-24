@@ -18,6 +18,8 @@ import { RateLimiter, RedisRateLimitStore } from './common/rate-limit/rate-limit
 import { RateLimiterLifecycle } from './common/rate-limit/rate-limiter.lifecycle';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { HealthController } from './health/health.controller';
+import { ApiMetrics } from './metrics/api-metrics';
+import { MetricsController } from './metrics/metrics.controller';
 import { HEALTH_PROBE_TIMEOUT_MS, HealthService } from './health/health.service';
 import { GitHubWebhookController } from './webhooks/github-webhook.controller';
 import { GitHubWebhookService } from './webhooks/github-webhook.service';
@@ -59,6 +61,7 @@ export class AppModule {
       ],
       controllers: [
         HealthController,
+        MetricsController,
         GitLabWebhookController,
         GitHubWebhookController,
         AuthController,
@@ -95,6 +98,7 @@ export class AppModule {
             ),
         },
         RateLimiterLifecycle,
+        ApiMetrics,
         OrganizationGuard,
         AuthService,
         OrganizationsService,

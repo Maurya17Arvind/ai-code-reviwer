@@ -32,6 +32,8 @@ export const ApiConfigSchema = ApiEnvSchema.extend({
   RATE_LIMIT_USER_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
   RATE_LIMIT_ANONYMOUS_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(120),
   RATE_LIMIT_WEBHOOK_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
+  /** Bearer token for GET /api/metrics (Prometheus). Unset: the endpoint answers 404. */
+  METRICS_TOKEN: z.string().min(20, 'must be at least 20 characters').optional(),
 });
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 

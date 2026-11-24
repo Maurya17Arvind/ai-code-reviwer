@@ -6,5 +6,6 @@ export * from './lib/stores/approval-store';
 export * from './lib/stores/auth-store';
 export * from './lib/stores/organization-store';
 export * from './lib/stores/insights-store';
+export * from './lib/stores/maintenance-store';
 export { Prisma } from './generated/prisma/client';
 export * from './generated/prisma/enums';

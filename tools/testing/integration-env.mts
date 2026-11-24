@@ -15,6 +15,8 @@ if (existsSync(dotEnvPath)) {
 }
 // Never run against the development database or queues (see integration-targets.mts).
 useTestTargets();
+// Worker HTTP server on a free port, so tests never clash with a running worker.
+process.env['WORKER_HTTP_PORT'] = '0';
 
 const required = (process.env['ACRA_REQUIRED_ENV'] ?? '').split(',').filter((name) => name.length > 0);
 for (const name of required) {

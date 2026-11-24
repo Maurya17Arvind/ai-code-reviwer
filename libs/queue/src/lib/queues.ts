@@ -62,6 +62,8 @@ export function approvalJobId(approvalId: string): string {
 
 export const SystemJobName = {
   Heartbeat: 'heartbeat',
+  /** Periodic recovery and housekeeping (Phase 8), scheduled by the worker. */
+  Maintenance: 'maintenance',
 } as const;
 export type SystemJobName = (typeof SystemJobName)[keyof typeof SystemJobName];
 

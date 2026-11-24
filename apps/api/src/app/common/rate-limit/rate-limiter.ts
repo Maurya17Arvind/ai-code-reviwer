@@ -74,7 +74,10 @@ export class RateLimiter {
       } catch (error) {
         if (this.now() - this.lastWarning > 60_000) {
           this.lastWarning = this.now();
-          this.logger.warn({ err: error instanceof Error ? error.message : 'unknown' }, 'Rate limit store unavailable; using in-memory limits');
+          this.logger.warn(
+            { err: error instanceof Error ? error.message : 'unknown' },
+            'Rate limit store unavailable; using in-memory limits',
+          );
         }
       }
     }

@@ -27,6 +27,7 @@ import { type ReviewMergeRequestJob, ReviewMergeRequestJobSchema } from '@acra/q
 import { buildReviewContext } from '@acra/repository-context';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { REVIEWER_FACTORY, WORKER_CONFIG, type WorkerConfig } from '../worker-config';
+import { WorkerMetrics } from '../ops/worker-metrics';
 import { HostedProviderFactory, ProviderConfigurationError } from './hosted-provider.factory';
 
 export type ReviewOutcome =
@@ -68,6 +69,7 @@ export class MergeRequestReviewService {
     @Inject(HostedProviderFactory) private readonly providers: HostedProviderFactory,
     @Inject(ApprovalStore) private readonly approvals: ApprovalStore,
     @Inject(OrganizationStore) private readonly organizations: OrganizationStore,
+    @Inject(WorkerMetrics) private readonly metrics: WorkerMetrics,
   ) {}
 
   async run(rawJob: unknown): Promise<ReviewOutcome> {
@@ -181,6 +183,8 @@ export class MergeRequestReviewService {
       priorFindings: await this.store.priorFindings(tenant, repositoryId, mr.id),
       reviewId: sessionId,
     });
+
+    this.metrics.recordExecutions(report.executions);
 
     // A newer commit may have arrived while the models were thinking: never publish stale results.
     const latest = await host.getReviewRequest(mr.id);

@@ -6,6 +6,9 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { ApprovalExecutionService } from './approvals/approval-execution.service';
 import { ApprovalProcessor } from './approvals/approval.processor';
+import { MaintenanceScheduler } from './ops/maintenance.scheduler';
+import { WorkerHttpServer } from './ops/worker-http.server';
+import { WorkerMetrics } from './ops/worker-metrics';
 import { HostedProviderFactory } from './reviews/hosted-provider.factory';
 import { MergeRequestReviewService } from './reviews/merge-request-review.service';
 import { ReviewProcessor } from './reviews/review.processor';
@@ -34,6 +37,9 @@ export class WorkerModule {
         ReviewProcessor,
         ApprovalExecutionService,
         ApprovalProcessor,
+        WorkerMetrics,
+        WorkerHttpServer,
+        MaintenanceScheduler,
       ],
     };
   }

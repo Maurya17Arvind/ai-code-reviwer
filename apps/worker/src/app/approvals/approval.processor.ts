@@ -2,6 +2,7 @@ import { ApprovalJobName, QueueName } from '@acra/queue';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError } from 'bullmq';
+import { WorkerMetrics } from '../ops/worker-metrics';
 import { ApprovalExecutionService, type ExecutionOutcome } from './approval-execution.service';
 
 /**
@@ -13,7 +14,10 @@ import { ApprovalExecutionService, type ExecutionOutcome } from './approval-exec
 export class ApprovalProcessor extends WorkerHost {
   private readonly logger = new Logger(ApprovalProcessor.name);
 
-  constructor(@Inject(ApprovalExecutionService) private readonly executor: ApprovalExecutionService) {
+  constructor(
+    @Inject(ApprovalExecutionService) private readonly executor: ApprovalExecutionService,
+    @Inject(WorkerMetrics) private readonly metrics: WorkerMetrics,
+  ) {
     super();
   }
 
@@ -21,6 +25,7 @@ export class ApprovalProcessor extends WorkerHost {
     if (job.name !== ApprovalJobName.Execute)
       throw new UnrecoverableError(`Unknown approval job "${job.name.slice(0, 64)}"`);
     const outcome = await this.executor.run(job.data);
+    this.metrics.approvals.inc({ status: outcome.status });
     this.logger.log({ jobId: job.id, outcome: outcome.status }, 'Approval job finished');
     return outcome;
   }
