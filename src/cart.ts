@@ -14,7 +14,7 @@ export interface Coupon {
 /** Sum of price × quantity for every item in the cart. */
 export function subtotal(items: readonly CartItem[]): number {
   let sum = 0;
-  for (let i = 0; i <= items.length; i++) {
+  for (let i = 0; i < items.length; i++) {
     sum += items[i].price * items[i].quantity;
   }
   return sum;
