@@ -1,0 +1,18 @@
+# Keep build contexts small and free of secrets.
+.git
+**/node_modules
+dist
+tmp
+coverage
+.nx
+.angular
+**/.vite
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+**/*.log
+.vscode
+.idea

@@ -1,0 +1,112 @@
+# Production-style deployment of the whole platform on one host (Phase 8).
+#
+#   cp .env.production.example .env.production   # fill in every value
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Only the dashboard (which also proxies /api, including webhooks) is published, on port 8080.
+# Put TLS in front of it (reverse proxy / load balancer) and point DASHBOARD_PUBLIC_URL,
+# WEBHOOK_PUBLIC_BASE_URL and the GitHub App webhook at that https address.
+
+name: acra-prod
+
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgresql://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  CREDENTIALS_MASTER_KEY: ${CREDENTIALS_MASTER_KEY:?CREDENTIALS_MASTER_KEY is required}
+  GITLAB_ALLOWED_HOSTS: ${GITLAB_ALLOWED_HOSTS:-gitlab.com}
+  GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+  GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+  GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+services:
+  postgres:
+    image: postgres:18.7-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      APP_DB_USER: ${APP_DB_USER:?APP_DB_USER is required}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./infrastructure/database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      ['sh', '-c', 'exec redis-server --requirepass "$${REDIS_PASSWORD}" --appendonly yes --maxmemory-policy noeviction']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$${REDIS_PASSWORD}" --no-auth-warning ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: infrastructure/docker/node-app.Dockerfile, target: migrate }
+    environment:
+      DATABASE_URL: postgresql://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    build: { context: ., dockerfile: infrastructure/docker/node-app.Dockerfile, args: { APP: api } }
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      API_HOST: 0.0.0.0
+      API_PORT: 3000
+      API_CORS_ORIGINS: ${DASHBOARD_PUBLIC_URL:?DASHBOARD_PUBLIC_URL is required}
+      DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL}
+      WEBHOOK_PUBLIC_BASE_URL: ${WEBHOOK_PUBLIC_BASE_URL:?WEBHOOK_PUBLIC_BASE_URL is required}
+      SESSION_COOKIE_SECURE: 'true'
+      # nginx (dashboard container) + your TLS proxy in front of it.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: { context: ., dockerfile: infrastructure/docker/node-app.Dockerfile, args: { APP: worker } }
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      <<: *app-env
+      WORKER_HTTP_HOST: 0.0.0.0
+      WORKER_HTTP_PORT: 3001
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_REVIEW_MODEL: ${ANTHROPIC_REVIEW_MODEL:-claude-opus-5-5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_REVIEW_MODEL: ${OPENAI_REVIEW_MODEL:-}
+      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-600000}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  dashboard:
+    build: { context: ., dockerfile: infrastructure/docker/dashboard.Dockerfile }
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:3000
+    ports:
+      - '${DASHBOARD_PORT:-8080}:8080'
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
