@@ -1,6 +1,6 @@
 import { type ReviewReport } from '@acra/review-engine';
 import { type ReviewFinding } from '@acra/shared-types';
-import { findingMarker, SUMMARY_MARKER } from './markers';
+import { findingMarker, summaryMarker } from './markers';
 import { codeFence, escapeInline, neutralizeQuickActions } from './sanitize';
 
 const SEVERITY_LABEL: Record<ReviewFinding['severity'], string> = {
@@ -85,7 +85,7 @@ export function renderSummaryComment(
   lines.push(
     `<sub>Findings are AI-generated and filtered by deterministic validation (${report.stats.rejected} rejected, ${report.stats.filtered} below thresholds). ` +
       'Resolve a thread to dismiss it. This bot never approves, merges or changes code.</sub>',
-    SUMMARY_MARKER,
+    summaryMarker(report.repository.headSha ?? ''),
   );
   return neutralizeQuickActions(lines.join('\n'));
 }

@@ -160,7 +160,7 @@ describe('GitHub pull request review (worker + PostgreSQL + fake GitHub App)', (
     expect(await service.run(job(sha('9')))).toMatchObject({ status: 'superseded' });
   });
 
-  it('resolves the review thread and updates the summary in place once the bug is fixed', async () => {
+  it('resolves the review thread and posts a new summary for the fixed commit', async () => {
     const pull = repo.pulls.get(7);
     if (!pull) throw new Error('missing pull');
     pull.head = { sha: FIXED, ref: 'feature' };
@@ -169,7 +169,8 @@ describe('GitHub pull request review (worker + PostgreSQL + fake GitHub App)', (
 
     expect(await service.run(job(FIXED))).toMatchObject({ status: 'completed', findings: 0, inlineComments: 0 });
     expect(repo.threads[0]?.isResolved).toBe(true);
-    expect(repo.issueComments).toHaveLength(1);
+    expect(repo.issueComments).toHaveLength(2);
+    expect(repo.issueComments.at(-1)?.body).toContain(`<!-- acra:summary sha=${FIXED} -->`);
   });
 
   it('refuses a job whose provider does not match the repository', async () => {

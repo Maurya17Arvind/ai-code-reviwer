@@ -151,8 +151,9 @@ describe('GitLab merge request review (worker + PostgreSQL + Redis + fake GitLab
     expect(inline?.position).toMatchObject({ new_path: 'src/cart.ts', new_line: 3, head_sha: BUGGY, base_sha: BASE });
     expect(inline?.body).toContain('Off\\-by\\-one');
     expect(inline?.body).toMatch(/<!-- acra:finding fp=[0-9a-f]+ -->/);
-    const summaries = notes.filter((n) => n.body.includes('<!-- acra:summary -->'));
+    const summaries = notes.filter((n) => n.body.includes('<!-- acra:summary'));
     expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.body).toContain(`<!-- acra:summary sha=${BUGGY} -->`);
 
     const session = await prisma.reviewSession.findFirstOrThrow({ where: { repositoryId, headSha: BUGGY } });
     expect(session).toMatchObject({ status: 'COMPLETED', requestId: 5, baseSha: BASE });
@@ -185,8 +186,8 @@ describe('GitLab merge request review (worker + PostgreSQL + Redis + fake GitLab
     });
   });
 
-  it('re-reviews a new commit: resolves the fixed finding, updates the same summary, never duplicates', async () => {
-    const summaryBefore = gitlab.botNotes(5).find((n) => n.body.includes('<!-- acra:summary -->'));
+  it('re-reviews a new commit: resolves the fixed finding, posts a new summary, never duplicates', async () => {
+    const summaryBefore = gitlab.botNotes(5).find((n) => n.body.includes('<!-- acra:summary'));
     const mr = gitlab.state.mergeRequests.get(5);
     if (!mr) throw new Error('missing MR');
     mr.diff_refs = { base_sha: BASE, start_sha: BASE, head_sha: FIXED };
@@ -199,10 +200,17 @@ describe('GitLab merge request review (worker + PostgreSQL + Redis + fake GitLab
     const notes = gitlab.botNotes(5);
     expect(notes.filter((n) => n.position)).toHaveLength(1);
     expect(notes.find((n) => n.position)?.resolved).toBe(true);
-    const summaries = notes.filter((n) => n.body.includes('<!-- acra:summary -->'));
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0]?.id).toBe(summaryBefore?.id);
-    expect(summaries[0]?.body).toContain('1 previously reported finding(s) are resolved');
+    // One summary per reviewed commit: the first one is kept as history, the new commit gets its own.
+    const summaries = notes.filter((n) => n.body.includes('<!-- acra:summary'));
+    expect(summaries).toHaveLength(2);
+    expect(summaries.some((s) => s.id === summaryBefore?.id)).toBe(true);
+    const latest = summaries.find((s) => s.body.includes(`<!-- acra:summary sha=${FIXED} -->`));
+    expect(latest?.body).toContain('1 previously reported finding(s) are resolved');
+
+    // Retrying the same commit updates that commit's summary instead of adding a third one.
+    await prisma.reviewSession.updateMany({ where: { repositoryId, headSha: FIXED }, data: { status: 'FAILED' } });
+    await service.run(job(FIXED));
+    expect(gitlab.botNotes(5).filter((n) => n.body.includes('<!-- acra:summary'))).toHaveLength(2);
 
     const finding = await prisma.reviewFinding.findFirstOrThrow({ where: { repositoryId, requestId: 5 } });
     expect(finding.status).toBe('RESOLVED');

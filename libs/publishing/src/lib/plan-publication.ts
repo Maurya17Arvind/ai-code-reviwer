@@ -41,6 +41,9 @@ export function planPublication(
   options: PlanOptions,
 ): PublicationPlan {
   const index = indexBotComments(existing);
+  // A new commit gets a new summary comment; only a retry of the same commit updates its summary.
+  const headSha = report.repository.headSha?.toLowerCase();
+  const sameCommitSummary = headSha ? index.summariesByCommit.get(headSha) : undefined;
   const lineMaps = new Map(
     context.files.map((file) => {
       const map = new Map<number, { added: boolean; oldLine?: number }>();
@@ -102,6 +105,6 @@ export function planPublication(
     summaryOnly,
     alreadyPublished,
     resolve,
-    ...(options.summary && index.summary ? { existingSummaryNoteId: index.summary.noteId } : {}),
+    ...(options.summary && sameCommitSummary ? { existingSummaryNoteId: sameCommitSummary.noteId } : {}),
   };
 }

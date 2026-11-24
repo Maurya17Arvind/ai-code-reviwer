@@ -2,7 +2,7 @@ import { type ExistingComment, type InlineCommentInput, type ReviewPublisher } f
 import { type ReviewContext } from '@acra/repository-context';
 import { type ReviewReport } from '@acra/review-engine';
 import { type ReviewFinding } from '@acra/shared-types';
-import { findingMarker, indexBotComments, SUMMARY_MARKER } from './markers';
+import { findingMarker, indexBotComments, SUMMARY_MARKER, summaryMarker } from './markers';
 import { planPublication } from './plan-publication';
 import { executePublication } from './publish';
 import { renderFindingComment, renderSummaryComment } from './render-comments';
@@ -157,7 +157,7 @@ describe('planPublication', () => {
       comment({ discussionId: 'd-old', body: `x ${findingMarker(FP(1))}` }),
       comment({ discussionId: 'd-fixed', body: `y ${findingMarker(FP(9))}` }),
       comment({ discussionId: 'd-done', body: `z ${findingMarker(FP(8))}`, resolved: true }),
-      comment({ discussionId: 'd-sum', noteId: 'sum-1', body: SUMMARY_MARKER, resolvable: false }),
+      comment({ discussionId: 'd-sum', noteId: 'sum-1', body: summaryMarker('b'.repeat(40)), resolvable: false }),
     ];
     const plan = planPublication(
       report([finding({ fingerprint: FP(1) })], {
@@ -174,6 +174,40 @@ describe('planPublication', () => {
     expect([...plan.alreadyPublished.keys()]).toEqual([FP(1)]);
     expect(plan.resolve).toEqual([{ fingerprint: FP(9), discussionId: 'd-fixed' }]);
     expect(plan.existingSummaryNoteId).toBe('sum-1');
+  });
+
+  it('posts a new summary for a new commit and updates only the summary of the same commit', () => {
+    const olderCommit = comment({
+      discussionId: 'd-old-sum',
+      noteId: 'sum-old',
+      body: summaryMarker('c'.repeat(40)),
+      resolvable: false,
+    });
+    const legacy = comment({ discussionId: 'd-legacy', noteId: 'sum-legacy', body: SUMMARY_MARKER, resolvable: false });
+    const newCommit = planPublication(report([finding()]), context, [olderCommit, legacy], {
+      inlineComments: true,
+      summary: true,
+    });
+    expect(newCommit.existingSummaryNoteId).toBeUndefined();
+
+    const sameCommit = comment({
+      discussionId: 'd-same',
+      noteId: 'sum-same',
+      body: summaryMarker('B'.repeat(40)),
+      resolvable: false,
+    });
+    const retry = planPublication(report([finding()]), context, [olderCommit, sameCommit], {
+      inlineComments: true,
+      summary: true,
+    });
+    expect(retry.existingSummaryNoteId).toBe('sum-same');
+
+    // A marker typed by someone else never counts.
+    const forged = { ...sameCommit, authoredByUs: false };
+    expect(
+      planPublication(report([finding()]), context, [forged], { inlineComments: true, summary: true })
+        .existingSummaryNoteId,
+    ).toBeUndefined();
   });
 
   it('puts everything in the summary when inline comments are disabled', () => {
@@ -221,7 +255,7 @@ describe('executePublication', () => {
     expect(publisher.inline).toHaveLength(1);
     expect(result.movedToSummary.map((f) => f.id)).toEqual(['b']);
     expect(publisher.summaries[0]?.body).toContain('Moved');
-    expect(publisher.summaries[0]?.body).toContain(SUMMARY_MARKER);
+    expect(publisher.summaries[0]?.body).toContain(summaryMarker('b'.repeat(40)));
     expect(result.comments.map((c) => c.kind)).toEqual(['inline', 'summary']);
   });
 
