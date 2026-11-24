@@ -33,9 +33,13 @@ export class ApprovalAdminError extends Error {
   }
 }
 
-async function tenantFor(deps: ApprovalAdminDeps, slug: string): Promise<TenantContext> {
-  const tenant = await deps.connections.findOrganization(slug);
-  if (!tenant) throw new ApprovalAdminError(`Organization "${slug}" not found`);
+/** The organization an operation runs in: a slug (operator CLI) or an authorized tenant (API). */
+export type OrganizationRef = { readonly slug: string } | { readonly tenant: TenantContext };
+
+async function tenantFor(deps: ApprovalAdminDeps, ref: OrganizationRef): Promise<TenantContext> {
+  if ('tenant' in ref) return ref.tenant;
+  const tenant = await deps.connections.findOrganization(ref.slug);
+  if (!tenant) throw new ApprovalAdminError(`Organization "${ref.slug}" not found`);
   return tenant;
 }
 
@@ -49,7 +53,7 @@ async function member(deps: ApprovalAdminDeps, tenant: TenantContext, email: str
 export async function addMember(
   deps: ApprovalAdminDeps,
   input: {
-    organizationSlug: string;
+    organization: OrganizationRef;
     email: string;
     displayName: string;
     role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
@@ -57,7 +61,7 @@ export async function addMember(
 ) {
   if (!/^[^\s@]+@[^\s@]+$/.test(input.email) || input.email.length > 320)
     throw new ApprovalAdminError('Invalid e-mail');
-  const tenant = await tenantFor(deps, input.organizationSlug);
+  const tenant = await tenantFor(deps, input.organization);
   const result = await deps.approvals.addMember(tenant, input);
   await deps.reviews.audit(tenant.organizationId, {
     action: 'member.upserted',
@@ -76,9 +80,15 @@ export async function addMember(
  */
 export async function requestApproval(
   deps: ApprovalAdminDeps,
-  input: { organizationSlug: string; fixId: string; step: 'push' | 'open'; requestedBy: string; ttlHours?: number },
+  input: {
+    organization: OrganizationRef;
+    fixId: string;
+    step: 'push' | 'open';
+    requestedBy: string;
+    ttlHours?: number;
+  },
 ): Promise<{ request: ApprovalRequest; description: string[] }> {
-  const tenant = await tenantFor(deps, input.organizationSlug);
+  const tenant = await tenantFor(deps, input.organization);
   const requester = await member(deps, tenant, input.requestedBy);
   const fix = await deps.approvals.getFix(tenant, input.fixId);
   if (!fix) throw new ApprovalAdminError('Fix not found');
@@ -152,14 +162,14 @@ export async function requestApproval(
 export async function decideApproval(
   deps: ApprovalAdminDeps,
   input: {
-    organizationSlug: string;
+    organization: OrganizationRef;
     approvalId: string;
     decidedBy: string;
     decision: 'approve' | 'reject';
     reason?: string;
   },
 ): Promise<{ request: ApprovalRequest; jobId?: string }> {
-  const tenant = await tenantFor(deps, input.organizationSlug);
+  const tenant = await tenantFor(deps, input.organization);
   const decider = await member(deps, tenant, input.decidedBy);
   const stored = await deps.approvals.getApproval(tenant, input.approvalId);
   if (!stored) throw new ApprovalAdminError('Approval request not found');
@@ -193,17 +203,17 @@ export async function decideApproval(
   return { request: next, jobId };
 }
 
-export async function listApprovals(deps: ApprovalAdminDeps, input: { organizationSlug: string; all: boolean }) {
-  const tenant = await tenantFor(deps, input.organizationSlug);
+export async function listApprovals(deps: ApprovalAdminDeps, input: { organization: OrganizationRef; all: boolean }) {
+  const tenant = await tenantFor(deps, input.organization);
   return deps.approvals.listApprovals(tenant, input.all ? {} : { statuses: ['pending', 'approved', 'executing'] });
 }
 
-export async function listFixes(deps: ApprovalAdminDeps, input: { organizationSlug: string }) {
-  return deps.approvals.listFixes(await tenantFor(deps, input.organizationSlug));
+export async function listFixes(deps: ApprovalAdminDeps, input: { organization: OrganizationRef }) {
+  return deps.approvals.listFixes(await tenantFor(deps, input.organization));
 }
 
-export async function showFix(deps: ApprovalAdminDeps, input: { organizationSlug: string; fixId: string }) {
-  const fix = await deps.approvals.getFix(await tenantFor(deps, input.organizationSlug), input.fixId);
+export async function showFix(deps: ApprovalAdminDeps, input: { organization: OrganizationRef; fixId: string }) {
+  const fix = await deps.approvals.getFix(await tenantFor(deps, input.organization), input.fixId);
   if (!fix) throw new ApprovalAdminError('Fix not found');
   return fix;
 }

@@ -21,6 +21,8 @@ export interface ConnectGitLabOptions {
   readonly webhookBaseUrl?: string;
   /** Register the project hook through the API (needs Maintainer). Otherwise print setup details. */
   readonly registerWebhook: boolean;
+  /** Dashboard: the signed-in member who connected the project (audited as a USER action). */
+  readonly actorUserId?: string;
 }
 
 export interface ConnectGitLabDeps {
@@ -95,6 +97,7 @@ export async function connectGitLabProject(
   }
 
   await deps.reviews.audit(tenant.organizationId, {
+    ...(options.actorUserId ? { actorType: 'USER' as const, actorUserId: options.actorUserId } : {}),
     action: 'repository.connected',
     targetType: 'repository',
     targetId: repository.id,

@@ -2,6 +2,7 @@ import { type AiProviderName, type AiReviewer } from '@acra/ai-providers-core';
 import { type ReviewerFactory } from '@acra/ai-providers-factory';
 import { runReview } from '@acra/agent-core';
 import {
+  applyOrganizationPolicy,
   DEFAULT_EXCLUDE_GLOBS,
   parseReviewConfig,
   REVIEW_CONFIG_FILENAME,
@@ -9,7 +10,7 @@ import {
   ReviewConfigError,
   defaultReviewConfig,
 } from '@acra/configuration';
-import { ApprovalStore, ReviewStore, type TenantContext } from '@acra/database';
+import { ApprovalStore, OrganizationStore, ReviewStore, type TenantContext } from '@acra/database';
 import { fixBranchName } from '@acra/approvals';
 import { generateFix } from '@acra/fix-engine';
 import { SEVERITY_RANK } from '@acra/review-engine';
@@ -66,6 +67,7 @@ export class MergeRequestReviewService {
     @Inject(REVIEWER_FACTORY) private readonly createReviewers: ReviewerFactory,
     @Inject(HostedProviderFactory) private readonly providers: HostedProviderFactory,
     @Inject(ApprovalStore) private readonly approvals: ApprovalStore,
+    @Inject(OrganizationStore) private readonly organizations: OrganizationStore,
   ) {}
 
   async run(rawJob: unknown): Promise<ReviewOutcome> {
@@ -136,8 +138,13 @@ export class MergeRequestReviewService {
     if (voided.approvals + voided.fixes > 0)
       this.logger.log({ repositoryId, requestId: mr.id, ...voided }, 'Invalidated approvals/fixes for an older commit');
 
-    const config = await this.loadConfig(host, mr);
-    if (!config.review.enabled) return this.finish(tenant, sessionId, 'SKIPPED', 'review.enabled is false');
+    // Repository config (untrusted) narrowed by the organization policy (ADR-036): stricter wins.
+    const repositoryConfig = await this.loadConfig(host, mr);
+    const policy = await this.organizations.getPolicy(tenant);
+    const config = applyOrganizationPolicy(repositoryConfig, policy);
+    if (!repositoryConfig.review.enabled) return this.finish(tenant, sessionId, 'SKIPPED', 'review.enabled is false');
+    if (!config.review.enabled)
+      return this.finish(tenant, sessionId, 'SKIPPED', 'reviews are paused by the organization policy');
 
     const changeSet = await host.getReviewRequestChanges(mr);
     const context = await buildReviewContext(changeSet, host, {

@@ -39,3 +39,5 @@ A _Proposed_ ADR describes a decision for a future phase; it becomes _Accepted_ 
 | [032](./032-bound-single-use-approvals.md)                     | Hash-bound, expiring, single-use approvals                  | Accepted                                                    |
 | [033](./033-isolated-worktree-and-validation-runner.md)        | Isolated fix worktrees and an allowlisted validation runner | Accepted                                                    |
 | [034](./034-hosted-fix-execution.md)                           | Hosted fixes written through provider APIs after approval   | Accepted                                                    |
+| [035](./035-dashboard-session-auth.md)                         | Dashboard authentication with server-side sessions          | Accepted                                                    |
+| [036](./036-organization-review-policy.md)                     | Organization review policy that only tightens repositories  | Accepted                                                    |

@@ -1,4 +1,5 @@
-import { ApiEnvSchema, loadEnv } from '@acra/configuration';
+import { loadEnv } from '@acra/configuration';
+import { ApiConfigSchema } from './api-config';
 import { ApiErrorSchema, LivenessResponseSchema, ReadinessResponseSchema } from '@acra/shared-contracts';
 import { type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -11,7 +12,7 @@ describe('API (integration)', () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    const config = loadEnv(ApiEnvSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
+    const config = loadEnv(ApiConfigSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
     app = await NestFactory.create(AppModule.forRoot(config), APP_OPTIONS);
     configureApp(app, config);
     await app.listen(0, '127.0.0.1');

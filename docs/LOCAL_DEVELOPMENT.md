@@ -37,6 +37,25 @@ pnpm test:integration            # containers (db/api/worker) + real temp git re
 
 The dashboard runs on **4300** (4200 is commonly taken on this machine).
 
+### First sign-in to the dashboard (Phase 7)
+
+Build the operator CLI once (`pnpm nx build api`), then create a user and give them a password:
+
+```powershell
+node dist/apps/api/admin.js users-create --email you@example.com --name "Your Name"
+node dist/apps/api/admin.js users-setup-link --email you@example.com   # open the printed link, choose a password
+# or, for local development only (the password is read from the environment, never from argv):
+$env:ACRA_NEW_PASSWORD = 'a long passphrase'; node dist/apps/api/admin.js users-set-password --email you@example.com
+```
+
+Sign in at http://localhost:4300 and create an organization, which makes you its owner. Invite teammates from
+**Members**. Each new person gets a single-use setup link to share with them.
+
+Optional dashboard features need API configuration (see `.env.example`):
+
+- connecting GitLab projects from the dashboard needs `CREDENTIALS_MASTER_KEY` for the API;
+- registering webhooks needs `WEBHOOK_PUBLIC_BASE_URL`.
+
 ## 4. Everyday commands
 
 | Command                                   | Purpose                                                   |

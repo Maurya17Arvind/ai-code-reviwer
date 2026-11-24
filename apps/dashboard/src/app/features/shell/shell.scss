@@ -22,30 +22,43 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 1.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
 .brand {
   font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
 }
 
-nav a {
-  color: var(--color-text-muted);
-  text-decoration: none;
-  padding: 0.25rem 0;
-  border-bottom: 2px solid transparent;
+.org-switch select {
+  min-width: 12rem;
+}
 
-  &.active,
-  &:hover {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent);
+.account-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-left: auto;
+
+  a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+
+    &.active,
+    &:hover {
+      color: var(--color-text);
+      border-bottom-color: var(--color-accent);
+    }
   }
 }
 
 .app-main {
-  max-width: 64rem;
+  max-width: 80rem;
   margin: 0 auto;
   padding: 1.5rem 1rem;
 

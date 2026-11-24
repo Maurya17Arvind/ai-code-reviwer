@@ -1,6 +1,6 @@
 # API Design
 
-> Last updated: 2026-11-23 · Implemented endpoints are marked ✅.
+> Last updated: 2026-11-24 · Implemented endpoints are marked ✅.
 
 ## 1. Conventions
 
@@ -63,12 +63,39 @@ The GitHub App webhook (one URL for all installations, see [GITHUB.md](./GITHUB.
 | `401`  | ApiError `Invalid webhook signature` | missing or wrong signature                                                                                  |
 | `404`  | ApiError                             | `GITHUB_WEBHOOK_SECRET` not configured                                                                      |
 
-### Planned (later phases)
+### ✅ Dashboard API (Phase 7, ADR-035)
 
-| Area                       | Endpoints (indicative)                                                                                      | Phase                 |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- |
-| Organizations / members    | `/api/v1/organizations`, `/members`                                                                         | 7                     |
-| Repositories & connections | `/api/v1/organizations/:orgId/repositories`, `/connections`                                                 | 4, 5, 7               |
-| Reviews & findings         | `/reviews`, `/reviews/:id`, `/findings?severity=&status=`, `PATCH /findings/:id` (dismiss / false positive) | 3, 7                  |
-| Approvals & fixes          | `/approvals`, `POST /approvals/:id/approve                                                                  | reject`, `/fixes/:id` | 6   |
-| Analytics, usage, audit    | `/analytics`, `/usage`, `/audit-logs`                                                                       | 7                     |
+All `/api/v1` routes need a session cookie unless noted, and every non-GET request needs `X-CSRF-Token`. Tenant routes
+live under `/api/v1/organizations/:orgId` and are checked against membership: non-members get 404, and members below
+the route's minimum role get 403. Request and response bodies are the Zod contracts in `@acra/shared-contracts`.
+Lists use keyset pagination (`?limit=1–100&cursor=`) and return `{ items, nextCursor }`. Responses carry
+`Cache-Control: no-store`.
+
+| Method & path                                                                             | Min role       | Purpose                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/auth/login` (public)                                                            | —              | Sign in. Sets the session cookie and returns `SessionResponse` with the CSRF token. Gives the same 401 for unknown e-mail, wrong password and locked account; 429 when limited. |
+| `GET /v1/auth/session`                                                                    | —              | Current user, memberships and CSRF token                                                                                                                                        |
+| `POST /v1/auth/logout`                                                                    | —              | Revokes the session server-side (204)                                                                                                                                           |
+| `POST /v1/auth/password`                                                                  | —              | Changes the password and revokes other sessions                                                                                                                                 |
+| `POST /v1/auth/setup-password` (public)                                                   | —              | Accepts an invitation or reset token (single use)                                                                                                                               |
+| `POST /v1/organizations`                                                                  | —              | Creates an organization; the caller becomes OWNER                                                                                                                               |
+| `GET /:orgId` · `PATCH /:orgId`                                                           | VIEWER · ADMIN | Organization details · rename                                                                                                                                                   |
+| `GET /:orgId/members`                                                                     | VIEWER         | Members with role, invitation state and last sign-in                                                                                                                            |
+| `POST /:orgId/members`                                                                    | ADMIN          | Adds a member. New users get a setup link (shown once). Only OWNERs grant OWNER.                                                                                                |
+| `PATCH` / `DELETE /:orgId/members/:memberId`                                              | ADMIN          | Changes the role or removes the member. Never your own membership, owners only by owners, the last OWNER stays.                                                                 |
+| `POST /:orgId/members/:memberId/setup-link`                                               | ADMIN          | New invitation or password-reset link                                                                                                                                           |
+| `GET` / `PUT /:orgId/settings`                                                            | VIEWER / ADMIN | Organization review policy (ADR-036)                                                                                                                                            |
+| `GET /:orgId/ai-providers`                                                                | VIEWER         | Observed status per AI provider; policy flags                                                                                                                                   |
+| `GET /:orgId/repositories` · `PATCH /:orgId/repositories/:id`                             | VIEWER · ADMIN | Repositories · pause or resume (`isActive`)                                                                                                                                     |
+| `GET /:orgId/connections` · `GET /:orgId/integrations`                                    | VIEWER         | Connections (never credentials) · which connect flows the server supports                                                                                                       |
+| `POST /:orgId/connections/gitlab`                                                         | ADMIN          | Connects a GitLab project with a write-only token. Needs `CREDENTIALS_MASTER_KEY`.                                                                                              |
+| `GET /:orgId/reviews?repositoryId&status` · `GET /:orgId/reviews/:id`                     | VIEWER         | Review history · details with model executions, findings and comment counts                                                                                                     |
+| `GET /:orgId/findings?severity&status&category&repositoryId` · `GET /:orgId/findings/:id` | VIEWER         | Findings · details with evidence, fixes and allowed transitions                                                                                                                 |
+| `PATCH /:orgId/findings/:id`                                                              | MEMBER         | Marks a finding `dismissed` or `false_positive` (compare-and-set, audited)                                                                                                      |
+| `GET /:orgId/fixes` · `GET /:orgId/fixes/:id`                                             | VIEWER         | Fix proposals · exact patch and next step                                                                                                                                       |
+| `GET /:orgId/approvals?scope=open\|all` · `GET /:orgId/approvals/:id`                     | VIEWER         | Approval requests · description and approval code                                                                                                                               |
+| `POST /:orgId/approvals`                                                                  | MEMBER         | Requests approval for a fix step (`push` / `open`)                                                                                                                              |
+| `POST /:orgId/approvals/:id/approve` · `.../reject`                                       | MEMBER         | Decides a request. Approve needs `{ code }`, which must match the request.                                                                                                      |
+| `GET /:orgId/analytics?days&repositoryId`                                                 | VIEWER         | Reviews, findings, false-positive rate, fixes and approvals; daily series                                                                                                       |
+| `GET /:orgId/usage?days&repositoryId`                                                     | VIEWER         | Tokens and estimated cost per provider/model, daily cost, fix cost                                                                                                              |
+| `GET /:orgId/audit-logs?action&cursor`                                                    | ADMIN          | Append-only audit log                                                                                                                                                           |

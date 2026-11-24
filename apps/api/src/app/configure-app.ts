@@ -15,6 +15,15 @@ export function configureApp(app: INestApplication, config: ApiConfig): void {
   // Webhook payloads exceed the 100 kB default; cap at 2 MB (rawBody is kept for HMAC checks).
   (app as NestExpressApplication).useBodyParser('json', { limit: '2mb' });
   app.use(helmet());
+  if (config.TRUST_PROXY_HOPS > 0) (app as NestExpressApplication).set('trust proxy', config.TRUST_PROXY_HOPS);
+  // Tenant data must never be stored by browsers or shared caches.
+  app.use(
+    '/api/v1',
+    (_request: unknown, response: { setHeader(name: string, value: string): void }, next: () => void) => {
+      response.setHeader('Cache-Control', 'no-store');
+      next();
+    },
+  );
   app.enableCors({
     origin: config.API_CORS_ORIGINS,
     credentials: true,

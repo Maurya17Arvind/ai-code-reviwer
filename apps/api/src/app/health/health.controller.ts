@@ -1,3 +1,4 @@
+import { Public } from '../auth/auth-context';
 import { type LivenessResponse, type ReadinessResponse } from '@acra/shared-contracts';
 import { Controller, Get, Header, HttpStatus, Inject, Res } from '@nestjs/common';
 import { type Response } from 'express';
@@ -7,6 +8,7 @@ import { HealthService } from './health.service';
  * Unauthenticated probes for orchestrators and load balancers.
  * They expose only coarse up/down status — never versions, hosts or error details.
  */
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(HealthService) private readonly health: HealthService) {}

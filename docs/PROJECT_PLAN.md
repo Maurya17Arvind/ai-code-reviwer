@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 6 complete — awaiting approval for Phase 7.** Last updated: 2026-11-24.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24).
+> Status: **Phase 7 complete — awaiting approval for Phase 8.** Last updated: 2026-11-24.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24), Phase 7 in [§12](#12-phase-7-results-2026-11-24).
 
 ## 1. Phase overview
 
@@ -12,10 +12,10 @@
 | 2     | Local Git integration + CLI                        | ✅ Complete (2026-11-23)    |
 | 3     | AI review engine (Claude + GPT, validation, dedup) | ✅ Complete (2026-11-23)    |
 | 4     | GitLab integration                                 | ✅ Complete (2026-11-23)    |
-| 5     | GitHub App integration                             | ⏳ Awaiting approval        |
-| 6     | Approval and fix workflow                          | Not started                 |
-| 7     | Angular dashboard (feature build-out)              | Not started                 |
-| 8     | Production readiness                               | Not started                 |
+| 5     | GitHub App integration                             | ✅ Complete (2026-11-23)    |
+| 6     | Approval and fix workflow                          | ✅ Complete (2026-11-24)    |
+| 7     | Angular dashboard (feature build-out)              | ✅ Complete (2026-11-24)    |
+| 8     | Production readiness                               | ⏳ Awaiting approval        |
 
 Rule: a phase is only marked complete when build, lint, type-check and tests pass, and no
 placeholder is presented as working functionality.
@@ -485,3 +485,80 @@ Branch: `feature/phase-6-approval-workflow` (based on `feature/phase-5-github`).
 - Approval UI, notifications and API endpoints for fixes and approvals are planned for Phase 7.
 - The hosted summary comment does not yet mention available fix proposals (Phase 7, with the dashboard link).
 - An OS-level sandbox for validation commands is planned for Phase 8.
+
+## 12. Phase 7 results (2026-11-24)
+
+Branch: `feature/phase-7-dashboard` (based on `feature/phase-6-approval-workflow`).
+
+### 12.1 Roadmap items
+
+| Roadmap item             | Delivered                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication           | Password sign-in (scrypt), server-side sessions in an HttpOnly SameSite=Strict cookie, session-bound CSRF token, absolute and idle expiry, lockout and attempt limits, invitation/reset links, password change, operator bootstrap commands (`users-create`, `users-setup-link`, `users-set-password`) (ADR-035) |
+| Organization management  | Create (the creator becomes OWNER), rename, organization switcher; membership and role checked on every request (non-members get 404)                                                                                                                                                                            |
+| Team and user management | Members page: invite with a single-use setup link, change roles, remove, issue reset links. Only OWNERs manage owners, nobody edits their own membership, the last OWNER is kept                                                                                                                                 |
+| Repository management    | Repository list with webhook state and last review; pause or resume reviews per repository                                                                                                                                                                                                                       |
+| Git provider connections | Connection list (never credentials). GitLab projects connect from the dashboard with a write-only token (needs `CREDENTIALS_MASTER_KEY` for the API). GitHub installations still connect through the operator CLI (the API holds no App private key)                                                             |
+| AI provider settings     | Organization policy switches per provider plus observed provider status (last run, last error, 30-day counts). Keys stay in the worker environment                                                                                                                                                               |
+| Review configuration     | `organization_settings`: pause reviews, allow fix proposals, severity and confidence floors. The worker applies them per review and they can only tighten `ai-review.yaml` (ADR-036)                                                                                                                             |
+| Review history           | Paginated reviews with repository/outcome filters; details with model executions (tokens, latency, cost, error kind), findings and comment counts                                                                                                                                                                |
+| Findings                 | Severity, status, category and repository filters; details with evidence and suggestion as untrusted text; triage to dismissed / false positive (compare-and-set, audited)                                                                                                                                       |
+| Approval management      | Open/all lists; details with exactly what will happen, commit and patch hash. Approving needs the request's code typed back (same state machine as the CLI); rejecting with a reason                                                                                                                             |
+| Fix proposals            | List and details with the exact platform-computed patch (safe diff view); request approval for the next step (push / open). Merging is never offered                                                                                                                                                             |
+| Analytics                | Reviews, new findings, false-positive rate, pending approvals; daily charts; breakdowns by severity, category, outcome and fix status                                                                                                                                                                            |
+| Usage and cost           | Tokens and estimated cost per provider/model, daily cost, fix-proposal cost, unpriced runs flagged                                                                                                                                                                                                               |
+| Audit logs               | Append-only log with event-type filter and keyset pagination (ADMIN+); secret-like metadata keys are hidden                                                                                                                                                                                                      |
+
+Angular 22.3: standalone components, signals and `computed`, `inject()`, `@if`/`@for`/`@switch`, reactive forms,
+`httpResource` (stable since 22.0) with Zod-validated responses, every page lazy-loaded, strict templates, and
+accessible states (live regions, labelled controls, a table alongside each chart, keyboard focus). No UI library
+was added. Initial bundle: 361 kB raw / 97 kB transferred.
+
+### 12.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **27 projects**. **369 unit tests** pass, 1 skipped
+  (Phase 6: 338). New:
+  - organization policy (6);
+  - password, cookie, CSRF and limiter primitives (11);
+  - dashboard (14): interceptor (CSRF only on writes and only to our API, 401 handling), login (validation, return
+    URL, no open redirect, error), findings (filters, error/retry, model text cannot inject markup), approval
+    detail (code required, CSRF sent, viewers get no decision), diff view.
+- `pnpm test:integration`: **277 tests** pass across 7 projects (Phase 6: 257). New:
+  - **Dashboard API (19):** real API, PostgreSQL, Redis and fake GitLab. Covers:
+    - deny by default;
+    - identical answers for unknown e-mail and wrong password;
+    - cookie flags; CSRF refusal; lockout; logout revocation;
+    - organization creation; 404 for non-members;
+    - invitation link used exactly once;
+    - role enforcement (member, admin, owner rules; no self-edit);
+    - policy validation and audit;
+    - repositories pause; review list and detail with costs; finding filters and triage;
+    - approval only with the exact code, and only once;
+    - analytics and usage numbers; provider status;
+    - GitLab connect with a write-only token, a rejected bad token and a blocked SSRF target;
+    - cross-tenant 404 on nested resources.
+  - **Worker (1):** a paused organization skips reviews, and a provider disabled by the policy is never requested.
+- Live smoke test: the built API and the dashboard dev server, driven over HTTP through the dev proxy. A user
+  created with the operator CLI signed in; a write without CSRF was refused; an organization was created; all 14
+  organization endpoints returned 200; the audit entry was present; after logout the session was rejected.
+- **Not verified in a real browser.** The pages are covered by component tests and the API by integration tests;
+  no visual check was done.
+
+### 12.3 Deviations and decisions
+
+| Item                        | Decision                                                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication method       | Local password accounts with server-side sessions. SSO (OIDC/GitLab/GitHub) can be added later on the same session model (ADR-035) |
+| E-mail                      | None. Invitations and resets produce single-use links that an admin shares                                                         |
+| "AI provider configuration" | A policy, not key management: keys stay in the worker environment; the dashboard shows observed status (ADR-036)                   |
+| "Review configuration"      | An organization policy that only tightens `ai-review.yaml`; no per-repository overrides in the database                            |
+| GitHub connection           | Remains an operator command, because the API holds no GitHub App private key (ADR-029)                                             |
+| Rate limiting               | Only sign-in and setup attempts are limited (per process). Global rate limiting stays in Phase 8                                   |
+| `approvals-admin`           | Now takes an organization slug (CLI) or an authorized tenant (API); both use the same functions                                    |
+
+### 12.4 Open items for Phase 8
+
+- Cluster-wide rate limiting, security audit (including the dashboard), and a production cookie and proxy setup
+  (`SESSION_COOKIE_SECURE`, `TRUST_PROXY_HOPS`, HTTPS).
+- Container images and deployment of the dashboard; Content-Security-Policy for the static site.
+- Optional: e-mail delivery for invitations, SSO, and GitHub installation linking from the dashboard.

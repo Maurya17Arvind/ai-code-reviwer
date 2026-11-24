@@ -115,9 +115,9 @@ describe('approval administration (PostgreSQL + Redis)', () => {
       costUsd: 0.01,
       branch: `ai-review/fix-${fixId.replace(/-/g, '').slice(0, 12)}`,
     });
-    await addMember(deps, { organizationSlug: slug, email: 'Owner@Example.com', displayName: 'Owner', role: 'OWNER' });
+    await addMember(deps, { organization: { slug }, email: 'Owner@Example.com', displayName: 'Owner', role: 'OWNER' });
     await addMember(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       email: 'viewer@example.com',
       displayName: 'Viewer',
       role: 'VIEWER',
@@ -132,19 +132,19 @@ describe('approval administration (PostgreSQL + Redis)', () => {
 
   it('only organization members can request; MR/PR creation needs a pushed fix first', async () => {
     await expect(
-      requestApproval(deps, { organizationSlug: slug, fixId, step: 'push', requestedBy: 'stranger@example.com' }),
+      requestApproval(deps, { organization: { slug }, fixId, step: 'push', requestedBy: 'stranger@example.com' }),
     ).rejects.toThrow(/not a member/);
     await expect(
-      requestApproval(deps, { organizationSlug: 'nope', fixId, step: 'push', requestedBy: 'owner@example.com' }),
+      requestApproval(deps, { organization: { slug: 'nope' }, fixId, step: 'push', requestedBy: 'owner@example.com' }),
     ).rejects.toThrow(/not found/);
     await expect(
-      requestApproval(deps, { organizationSlug: slug, fixId, step: 'open', requestedBy: 'owner@example.com' }),
+      requestApproval(deps, { organization: { slug }, fixId, step: 'open', requestedBy: 'owner@example.com' }),
     ).rejects.toThrow(/Push the fix/);
   });
 
   it('creates a bound pending request, refuses VIEWER approval, approves once and queues execution', async () => {
     const { request, description } = await requestApproval(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       fixId,
       step: 'push',
       requestedBy: 'owner@example.com',
@@ -159,14 +159,14 @@ describe('approval administration (PostgreSQL + Redis)', () => {
 
     await expect(
       decideApproval(deps, {
-        organizationSlug: slug,
+        organization: { slug },
         approvalId: request.id,
         decidedBy: 'viewer@example.com',
         decision: 'approve',
       }),
     ).rejects.toThrow(/VIEWER/);
     const approved = await decideApproval(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       approvalId: request.id,
       decidedBy: 'owner@example.com',
       decision: 'approve',
@@ -175,7 +175,7 @@ describe('approval administration (PostgreSQL + Redis)', () => {
     expect((await queue.getJob(`approval_${request.id}`))?.data).toEqual({ organizationId, approvalId: request.id });
     await expect(
       decideApproval(deps, {
-        organizationSlug: slug,
+        organization: { slug },
         approvalId: request.id,
         decidedBy: 'owner@example.com',
         decision: 'approve',
@@ -194,13 +194,13 @@ describe('approval administration (PostgreSQL + Redis)', () => {
 
   it('rejects requests, and refuses approval once a newer commit was reviewed', async () => {
     const first = await requestApproval(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       fixId,
       step: 'push',
       requestedBy: 'owner@example.com',
     });
     const rejected = await decideApproval(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       approvalId: first.request.id,
       decidedBy: 'owner@example.com',
       decision: 'reject',
@@ -210,7 +210,7 @@ describe('approval administration (PostgreSQL + Redis)', () => {
     expect(rejected.jobId).toBeUndefined();
 
     const second = await requestApproval(deps, {
-      organizationSlug: slug,
+      organization: { slug },
       fixId,
       step: 'push',
       requestedBy: 'owner@example.com',
@@ -227,16 +227,16 @@ describe('approval administration (PostgreSQL + Redis)', () => {
     });
     await expect(
       decideApproval(deps, {
-        organizationSlug: slug,
+        organization: { slug },
         approvalId: second.request.id,
         decidedBy: 'owner@example.com',
         decision: 'approve',
       }),
     ).rejects.toThrow(/reviewed commit changed/);
     await expect(
-      requestApproval(deps, { organizationSlug: slug, fixId, step: 'push', requestedBy: 'owner@example.com' }),
+      requestApproval(deps, { organization: { slug }, fixId, step: 'push', requestedBy: 'owner@example.com' }),
     ).rejects.toThrow(/newer commit/);
-    expect((await listApprovals(deps, { organizationSlug: slug, all: true })).length).toBe(3);
+    expect((await listApprovals(deps, { organization: { slug }, all: true })).length).toBe(3);
   });
 
   it('enforces approval invariants in the database as well', async () => {

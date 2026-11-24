@@ -75,6 +75,18 @@ idempotency keys are prefixed with the provider.
 `audit_logs` now records human actions with `actor_type = USER` and `actor_user_id`. `ApprovalStore` applies every
 status change with compare-and-set on the previous status and the binding hash.
 
+## 2e. Implemented in Phase 7 (`phase7_auth_dashboard`)
+
+| Table                   | Key columns                                                                                                                                                                           | Constraints / indexes                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `users` (altered)       | + `password_hash` (scrypt, null until set), `password_changed_at`, `failed_login_count`, `locked_until`, `last_login_at`                                                              | —                                                                           |
+| `user_sessions`         | `user_id`, `token_hash` (SHA-256 of the cookie token), `expires_at`, `last_seen_at`, `revoked_at`, `ip_address`, `user_agent`                                                         | unique `token_hash`; index `(user_id, expires_at)`                          |
+| `user_setup_tokens`     | `user_id`, `token_hash`, `purpose` (INVITE/RESET), `created_by_id`, `expires_at`, `used_at`                                                                                           | unique `token_hash`; consumed with compare-and-set on `used_at IS NULL`     |
+| `organization_settings` | PK `organization_id`; `reviews_enabled`, `allow_claude`, `allow_openai`, `allow_ollama`, `allow_fix_proposals`, `minimum_severity_floor`, `minimum_confidence_floor`, `updated_by_id` | CHECK severity in (critical, high, medium, low); CHECK confidence in [0, 1] |
+
+Sessions and setup links store only hashes. Platform-level identity events go to `audit_logs` with
+`organization_id = NULL`. Dashboard lists use keyset pagination over `(created_at desc, id desc)` with opaque cursors.
+
 ## 3. Target model (added in the phase that uses it)
 
 > Review tables moved from Phase 3 to Phase 4 (ADR-025): in Phase 3 only the local CLI runs reviews, and it stores

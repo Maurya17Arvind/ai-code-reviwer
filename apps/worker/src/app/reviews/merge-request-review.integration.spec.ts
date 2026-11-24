@@ -60,8 +60,11 @@ class FakeReviewer implements AiReviewer {
     };
   }
 }
+let lastRequestedProviders: string[] = [];
 const fakeFactory: ReviewerFactory = (_env, providers) => ({
-  reviewers: [...providers].filter((p) => p !== 'ollama').map((p) => new FakeReviewer(p)),
+  reviewers: [...(lastRequestedProviders = [...providers])]
+    .filter((p) => p !== 'ollama')
+    .map((p) => new FakeReviewer(p)),
   skipped: [],
   destinations: [],
 });
@@ -230,6 +233,40 @@ describe('GitLab merge request review (worker + PostgreSQL + Redis + fake GitLab
       status: 'FAILED',
       errorCode: 'config_invalid',
     });
+  });
+
+  it('applies the organization policy: paused reviews are skipped, disallowed providers never run', async () => {
+    const pausedHead = sha('7');
+    gitlab.addMergeRequest({
+      iid: 9,
+      diff_refs: { base_sha: BASE, start_sha: BASE, head_sha: pausedHead },
+      diffs: [{ old_path: 'src/cart.ts', new_path: 'src/cart.ts', diff: BUGGY_DIFF }],
+    });
+    gitlab.setFile(pausedHead, 'src/cart.ts', BUGGY_FILE);
+    await prisma.organizationSettings.create({ data: { organizationId, reviewsEnabled: false } });
+    try {
+      expect(await service.run(job(pausedHead, 9))).toMatchObject({
+        status: 'skipped',
+        reason: 'reviews are paused by the organization policy',
+      });
+
+      await prisma.organizationSettings.update({
+        where: { organizationId },
+        data: { reviewsEnabled: true, allowOpenai: false },
+      });
+      const nextHead = sha('8');
+      gitlab.addMergeRequest({
+        iid: 10,
+        diff_refs: { base_sha: BASE, start_sha: BASE, head_sha: nextHead },
+        diffs: [{ old_path: 'src/cart.ts', new_path: 'src/cart.ts', diff: BUGGY_DIFF }],
+      });
+      gitlab.setFile(nextHead, 'src/cart.ts', BUGGY_FILE);
+      expect(await service.run(job(nextHead, 10))).toMatchObject({ status: 'completed' });
+      expect(lastRequestedProviders).not.toContain('gpt');
+      expect(lastRequestedProviders).toContain('claude');
+    } finally {
+      await prisma.organizationSettings.delete({ where: { organizationId } });
+    }
   });
 
   it('rejects jobs whose organization does not own the repository (tenant isolation)', async () => {

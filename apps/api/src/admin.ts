@@ -13,6 +13,10 @@
  * Fix approvals (Phase 6): fixes-list | fixes-show | approvals-request | approvals-approve |
  * approvals-reject | approvals-list | members-add. Approving needs the approval code of exactly
  * that request; execution runs in the worker, which re-verifies everything. Merging is never offered.
+ *
+ * Dashboard sign-in (Phase 7): users-create adds a user (first sign-in on a fresh install);
+ * users-setup-link prints a single-use password setup link;
+ * users-set-password sets a password read from ACRA_NEW_PASSWORD (never from argv).
  */
 import 'reflect-metadata';
 import {
@@ -24,10 +28,11 @@ import {
   resolveGitHubAppSettings,
 } from '@acra/configuration';
 import { approvalCode } from '@acra/approvals';
-import { ApprovalStore, ConnectionStore, createPrismaClient, ReviewStore } from '@acra/database';
+import { ApprovalStore, AuthStore, ConnectionStore, createPrismaClient, ReviewStore } from '@acra/database';
 import { createRedisConnectionOptions, enqueueApprovalExecution, QueueName } from '@acra/queue';
 import { Queue } from 'bullmq';
-import { parseMasterKey } from '@acra/security';
+import { generateToken, hashToken, parseMasterKey } from '@acra/security';
+import { PASSWORD_MIN_LENGTH } from '@acra/shared-contracts';
 import { Command, Option } from 'commander';
 import * as z from 'zod';
 import {
@@ -41,6 +46,8 @@ import {
 } from './admin/approvals-admin';
 import { connectGitHubInstallation } from './admin/connect-github';
 import { connectGitLabProject } from './admin/connect-gitlab';
+import { SETUP_LINK_TTL_MS } from './app/auth/auth.service';
+import { hashPassword } from './app/auth/password';
 
 const AdminEnvSchema = GitProviderEnvSchema.extend({
   DATABASE_URL: z.string().min(1),
@@ -180,7 +187,7 @@ program
   .addOption(new Option('--role <role>', 'role').choices(['OWNER', 'ADMIN', 'MEMBER', 'VIEWER']).default('MEMBER'))
   .action(async (o: { org: string; email: string; name: string; role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' }) => {
     await withApprovalDeps((deps) =>
-      addMember(deps, { organizationSlug: o.org, email: o.email, displayName: o.name, role: o.role }),
+      addMember(deps, { organization: { slug: o.org }, email: o.email, displayName: o.name, role: o.role }),
     );
     out(`Member ${o.email.toLowerCase()} (${o.role}) saved.`);
   });
@@ -190,7 +197,7 @@ program
   .description('list AI fix proposals of an organization')
   .requiredOption('--org <slug>', 'organization slug')
   .action(async (o: { org: string }) => {
-    const fixes = await withApprovalDeps((deps) => listFixes(deps, { organizationSlug: o.org }));
+    const fixes = await withApprovalDeps((deps) => listFixes(deps, { organization: { slug: o.org } }));
     if (fixes.length === 0) out('No fix proposals.');
     for (const f of fixes) out(`${f.id}  ${f.status.padEnd(10)}  !${f.requestId}  ${f.filePath}  ${f.finding.title}`);
   });
@@ -201,7 +208,7 @@ program
   .requiredOption('--org <slug>', 'organization slug')
   .argument('<fix-id>', 'fix id')
   .action(async (fixId: string, o: { org: string }) => {
-    const f = await withApprovalDeps((deps) => showFix(deps, { organizationSlug: o.org, fixId }));
+    const f = await withApprovalDeps((deps) => showFix(deps, { organization: { slug: o.org }, fixId }));
     out(`Fix ${f.id} · ${f.status} · ${f.filePath} · +${f.additions} −${f.deletions} · ${f.provider}/${f.model}`);
     out(`Finding: ${f.finding.title} (${f.finding.severity}, ${f.finding.category})`);
     out(`Why (model explanation, unverified): ${f.explanation}`);
@@ -216,7 +223,7 @@ program
   .option('--all', 'include finished requests')
   .action(async (o: { org: string; all?: boolean }) => {
     const list = await withApprovalDeps((deps) =>
-      listApprovals(deps, { organizationSlug: o.org, all: Boolean(o.all) }),
+      listApprovals(deps, { organization: { slug: o.org }, all: Boolean(o.all) }),
     );
     if (list.length === 0) out('No approval requests.');
     for (const { request: r } of list) {
@@ -238,7 +245,13 @@ program
     const ttlHours = Number(o.ttlHours);
     if (!Number.isFinite(ttlHours) || ttlHours <= 0 || ttlHours > 168) throw new Error('--ttl-hours must be 1–168');
     const { request, description } = await withApprovalDeps((deps) =>
-      requestApproval(deps, { organizationSlug: o.org, fixId: o.fix, step: o.step, requestedBy: o.user, ttlHours }),
+      requestApproval(deps, {
+        organization: { slug: o.org },
+        fixId: o.fix,
+        step: o.step,
+        requestedBy: o.user,
+        ttlHours,
+      }),
     );
     out(`Approval request ${request.id} (pending, expires ${request.expiresAt})`);
     for (const line of description) out(`  ${line}`);
@@ -257,14 +270,19 @@ program
   .argument('<approval-id>', 'approval request id')
   .action(async (approvalId: string, o: { org: string; user: string; code: string }) => {
     const result = await withApprovalDeps(async (deps) => {
-      const stored = (await listApprovals(deps, { organizationSlug: o.org, all: true })).find(
+      const stored = (await listApprovals(deps, { organization: { slug: o.org }, all: true })).find(
         (a) => a.request.id === approvalId,
       );
       if (!stored) throw new Error('Approval request not found');
       if (approvalCode(stored.request) !== o.code.trim().toLowerCase()) {
         throw new Error('The approval code does not match this request. Nothing was approved.');
       }
-      return decideApproval(deps, { organizationSlug: o.org, approvalId, decidedBy: o.user, decision: 'approve' });
+      return decideApproval(deps, {
+        organization: { slug: o.org },
+        approvalId,
+        decidedBy: o.user,
+        decision: 'approve',
+      });
     });
     out(`Approved ${result.request.id}; execution queued (job ${result.jobId ?? '-'}). Merging stays a human action.`);
   });
@@ -279,7 +297,7 @@ program
   .action(async (approvalId: string, o: { org: string; user: string; reason?: string }) => {
     await withApprovalDeps((deps) =>
       decideApproval(deps, {
-        organizationSlug: o.org,
+        organization: { slug: o.org },
         approvalId,
         decidedBy: o.user,
         decision: 'reject',
@@ -287,6 +305,94 @@ program
       }),
     );
     out(`Rejected ${approvalId}.`);
+  });
+
+const UsersEnvSchema = z.object({
+  DATABASE_URL: z.string().min(1),
+  DASHBOARD_PUBLIC_URL: z.url({ protocol: /^https?$/ }).optional(),
+  API_CORS_ORIGINS: z.string().optional(),
+});
+
+async function withAuthStore<T>(action: (store: AuthStore, env: z.infer<typeof UsersEnvSchema>) => Promise<T>) {
+  loadDotEnvFile();
+  const env = loadEnv(UsersEnvSchema);
+  const prisma = createPrismaClient({ databaseUrl: env.DATABASE_URL, poolMax: 2 });
+  try {
+    return await action(new AuthStore(prisma), env);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+program
+  .command('users-create')
+  .description('create a dashboard user (no organization yet; they can create one after signing in)')
+  .requiredOption('--email <email>', 'user e-mail')
+  .requiredOption('--name <name>', 'display name')
+  .action(async (o: { email: string; name: string }) => {
+    if (!/^[^\s@]+@[^\s@]+$/.test(o.email) || o.email.length > 320) throw new Error('Invalid e-mail');
+    if (o.name.trim().length === 0 || o.name.length > 200) throw new Error('--name must be 1–200 characters');
+    const user = await withAuthStore(async (store) => {
+      const created = await store.ensureUser(o.email, o.name.trim());
+      await store.audit({ action: 'user.created', userId: created.id, metadata: { via: 'operator_cli' } });
+      return created;
+    });
+    out(`User ${user.email} ready. Next: users-setup-link --email ${user.email} (or users-set-password).`);
+  });
+
+program
+  .command('users-setup-link')
+  .description('print a single-use dashboard link (72 h) that lets a user choose a password')
+  .requiredOption('--email <email>', 'user e-mail (add the user to an organization with members-add first)')
+  .action(async (o: { email: string }) => {
+    const link = await withAuthStore(async (store, env) => {
+      const user = await store.findUserByEmail(o.email);
+      if (!user) throw new Error('No user with this e-mail. Add them with members-add first.');
+      const token = generateToken();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + SETUP_LINK_TTL_MS);
+      await store.createSetupToken({
+        userId: user.id,
+        tokenHash: hashToken(token),
+        purpose: user.passwordHash ? 'RESET' : 'INVITE',
+        createdById: null,
+        expiresAt,
+        now,
+      });
+      await store.audit({ action: 'auth.setup_link_issued', userId: user.id, metadata: { via: 'operator_cli' } });
+      const base = (
+        env.DASHBOARD_PUBLIC_URL ??
+        env.API_CORS_ORIGINS?.split(',')[0]?.trim() ??
+        'http://localhost:4300'
+      ).replace(/\/+$/, '');
+      return { url: `${base}/setup-password#token=${token}`, expiresAt };
+    });
+    out(`Setup link (single use, expires ${link.expiresAt.toISOString()}):`);
+    out(link.url);
+  });
+
+program
+  .command('users-set-password')
+  .description('set a user password from the ACRA_NEW_PASSWORD environment variable (local development)')
+  .requiredOption('--email <email>', 'user e-mail')
+  .action(async (o: { email: string }) => {
+    const password = process.env['ACRA_NEW_PASSWORD'] ?? '';
+    if (password.length < PASSWORD_MIN_LENGTH || password.length > 200) {
+      throw new Error(`ACRA_NEW_PASSWORD must be ${PASSWORD_MIN_LENGTH}–200 characters`);
+    }
+    await withAuthStore(async (store) => {
+      const user = await store.findUserByEmail(o.email);
+      if (!user) throw new Error('No user with this e-mail. Add them with members-add first.');
+      const now = new Date();
+      await store.setPassword(user.id, await hashPassword(password), now);
+      const revoked = await store.revokeUserSessions(user.id, now);
+      await store.audit({
+        action: 'auth.password_set',
+        userId: user.id,
+        metadata: { via: 'operator_cli', sessionsRevoked: revoked },
+      });
+    });
+    out(`Password set for ${o.email.toLowerCase()}; existing sessions were signed out.`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

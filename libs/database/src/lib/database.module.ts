@@ -1,7 +1,10 @@
 import { type DynamicModule, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { type CreatePrismaClientOptions, createPrismaClient, PrismaClient } from './prisma-client';
 import { ApprovalStore } from './stores/approval-store';
+import { AuthStore } from './stores/auth-store';
 import { ConnectionStore } from './stores/connection-store';
+import { InsightsStore } from './stores/insights-store';
+import { OrganizationStore } from './stores/organization-store';
 import { ReviewStore } from './stores/review-store';
 import { PRISMA_CLIENT } from './tokens';
 
@@ -39,8 +42,20 @@ export class DatabaseModule {
         ReviewStore,
         ConnectionStore,
         ApprovalStore,
+        AuthStore,
+        OrganizationStore,
+        InsightsStore,
       ],
-      exports: [PRISMA_CLIENT, DatabaseHealth, ReviewStore, ConnectionStore, ApprovalStore],
+      exports: [
+        PRISMA_CLIENT,
+        DatabaseHealth,
+        ReviewStore,
+        ConnectionStore,
+        ApprovalStore,
+        AuthStore,
+        OrganizationStore,
+        InsightsStore,
+      ],
     };
   }
 }

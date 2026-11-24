@@ -123,7 +123,34 @@ Residual risks:
 
 - Local validation commands run as the user, without OS-level isolation. They are shown and approved first, and
   an optional container runner is planned for Phase 8.
-- Server-side decisions go through the operator CLI until the Phase 7 authentication arrives.
+- Hosted approval decisions are made in the dashboard (Phase 7) or through the operator CLI.
+
+## 2f. Controls implemented in Phase 7 (dashboard)
+
+| Control                                                                                                                                                                                                                              | Where                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| Deny by default: a global guard requires a session on every route except `@Public()` ones (health, webhooks, login, password setup)                                                                                                  | `SessionGuard` (ADR-035)                      |
+| Passwords hashed with scrypt (N=2^17, r=8, p=1, per-hash salt and parameters, rehash on sign-in); 12–200 characters, NFKC-normalised                                                                                                 | `auth/password.ts`                            |
+| Server-side sessions: random 256-bit token in an HttpOnly, SameSite=Strict cookie (`__Host-` + Secure in production); only its hash stored                                                                                           | `user_sessions`, `session-token.ts`           |
+| Absolute and idle session expiry; logout and password changes revoke sessions server-side                                                                                                                                            | `AuthService.authenticate`                    |
+| CSRF: session-bound token required in `X-CSRF-Token` on every non-GET request; login accepts JSON only                                                                                                                               | `SessionGuard`, `csrfTokenFor`                |
+| Lockout after 5 failures (15 min, in the database), plus per-IP and per-e-mail attempt limits; identical answers for unknown e-mails, wrong passwords and locked accounts                                                            | `AuthService.login`, `AttemptLimiter`         |
+| Tenant isolation: `/organizations/:orgId` checked against membership on every request; non-members get 404; every store query filters by `organization_id`                                                                           | `OrganizationGuard`, stores (ADR-010)         |
+| Roles: ADMIN+ manages members, repositories, connections and policy; MEMBER+ triages findings and decides approvals; only OWNERs manage owners; nobody edits their own membership; the last OWNER is kept (serializable transaction) | `OrganizationsService`, `OrganizationStore`   |
+| Dashboard approvals need the request's code typed back and run through the same state machine as the CLI                                                                                                                             | `ApprovalsService` (ADR-032)                  |
+| Invitation and reset links: single use, 72 h, hash stored, token only in the URL fragment, earlier links voided                                                                                                                      | `user_setup_tokens`, `setup-password-page.ts` |
+| GitLab tokens entered in the dashboard are write-only: validated, envelope-encrypted, never returned or logged; the base URL passes the SSRF policy                                                                                  | `RepositoriesService.connectGitLab`           |
+| The organization policy can only tighten `ai-review.yaml` (AND / max) and never relaxes approvals                                                                                                                                    | `applyOrganizationPolicy` (ADR-036)           |
+| Tenant API responses carry `Cache-Control: no-store`; validation errors name fields but never echo values; 5xx responses stay generic                                                                                                | `configureApp`, `ZodValidationPipe`           |
+| Dashboard: untrusted text (model output, file paths, patches) is rendered by interpolation only, never `innerHTML`; every response is validated against shared Zod contracts; return URLs must stay inside the app                   | dashboard                                     |
+| Audit: identity events (platform level) and every organization change, with request id and client IP; metadata with secret-like keys is hidden in the audit view                                                                     | `audit_logs`, `InsightsController`            |
+
+Residual risks:
+
+- The attempt limits are per process. Cluster-wide rate limiting for all endpoints is Phase 8.
+- Setup links are handed over by an admin, because there is no e-mail delivery yet. Anyone holding a link can set that
+  user's password until the link is used or expires.
+- `TRUST_PROXY_HOPS` must match the deployment. Otherwise audit logs and attempt limits see the proxy's address.
 
 ### Development-only relaxations (must not reach production)
 
@@ -137,7 +164,7 @@ Residual risks:
 | SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks) | 4     |
 | Envelope-encrypted credentials (ADR-011)                                                                     | 4     |
 | OS-level isolation for validation commands (container, no network, CPU/memory limits)                        | 8     |
-| AuthN/AuthZ, rate limiting (`@nestjs/throttler`), CSRF strategy for cookie sessions                          | 7–8   |
+| AuthN/AuthZ and CSRF for cookie sessions: done in Phase 7; global rate limiting (`@nestjs/throttler`)        | 8     |
 | Dependency scanning, container hardening, RLS evaluation, security audit                                     | 8     |
 
 ## 4. Data sent to external AI providers (implemented in Phase 3)

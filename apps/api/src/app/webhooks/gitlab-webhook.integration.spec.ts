@@ -1,4 +1,4 @@
-import { ApiEnvSchema, loadEnv } from '@acra/configuration';
+import { loadEnv } from '@acra/configuration';
 import { ConnectionStore, createPrismaClient, type PrismaClient, ReviewStore } from '@acra/database';
 import { createRedisConnectionOptions, QueueName, reviewJobId } from '@acra/queue';
 import { generateMasterKey, parseMasterKey } from '@acra/security';
@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { connectGitLabProject } from '../../admin/connect-gitlab';
 import { AppModule } from '../app.module';
 import { APP_OPTIONS, configureApp } from '../configure-app';
+import { ApiConfigSchema } from '../api-config';
 
 const HEAD = 'c'.repeat(40);
 
@@ -72,7 +73,7 @@ describe('GitLab webhook intake + connect-gitlab (API + PostgreSQL + Redis + fak
 
   beforeAll(async () => {
     gitlab = await new FakeGitLab().start();
-    const config = loadEnv(ApiEnvSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
+    const config = loadEnv(ApiConfigSchema, { ...process.env, API_CORS_ORIGINS: 'http://localhost:4300' });
     prisma = createPrismaClient({ databaseUrl: config.DATABASE_URL, poolMax: 2 });
     app = await NestFactory.create(AppModule.forRoot(config), APP_OPTIONS);
     configureApp(app, config);
