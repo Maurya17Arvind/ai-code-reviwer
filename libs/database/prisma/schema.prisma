@@ -266,6 +266,8 @@ model ReviewSession {
 
   @@index([repositoryId, requestId, createdAt(sort: Desc)])
   @@index([organizationId, createdAt(sort: Desc)])
+  /// Dashboard: review history filtered by outcome (Phase 8).
+  @@index([organizationId, status, createdAt(sort: Desc)])
   @@map("review_sessions")
 }
 
@@ -326,6 +328,11 @@ model ReviewFinding {
 
   @@unique([repositoryId, requestId, fingerprint])
   @@index([organizationId, status])
+  /// Dashboard keyset pagination and severity filter (Phase 8).
+  @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([organizationId, severity, createdAt(sort: Desc)])
+  /// Review details and per-review finding counts.
+  @@index([lastSessionId])
   @@map("review_findings")
 }
 
@@ -488,6 +495,8 @@ model ApprovalRequest {
   @@index([organizationId, status, expiresAt])
   @@index([repositoryId, requestId, status])
   @@index([proposedFixId])
+  /// Dashboard: approvals newest first (Phase 8).
+  @@index([organizationId, createdAt(sort: Desc)])
   @@map("approval_requests")
 }
 

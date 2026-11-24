@@ -85,12 +85,6 @@ function sinceDays(days: number, now: Date): Date {
   return new Date(now.getTime() - days * 86_400_000);
 }
 
-function countBy<T>(rows: readonly T[], key: (row: T) => string, weight: (row: T) => number = () => 1) {
-  const out: Record<string, number> = {};
-  for (const row of rows) out[key(row)] = (out[key(row)] ?? 0) + weight(row);
-  return out;
-}
-
 const day = (date: Date) => date.toISOString().slice(0, 10);
 
 /**
@@ -278,31 +272,41 @@ export class InsightsStore {
       organizationId: tenant.organizationId,
       ...(query.repositoryId ? { repositoryId: query.repositoryId } : {}),
     };
-    const [sessions, findings, triaged, fixes, approvals] = await Promise.all([
-      this.prisma.reviewSession.findMany({
-        where: { ...scope, createdAt: { gte: from } },
-        select: { status: true, createdAt: true },
-      }),
-      this.prisma.reviewFinding.findMany({
-        where: { ...scope, createdAt: { gte: from } },
-        select: { severity: true, category: true, status: true, createdAt: true },
-      }),
-      this.prisma.reviewFinding.groupBy({
-        by: ['status'],
-        where: { ...scope, updatedAt: { gte: from }, status: { in: ['DISMISSED', 'FALSE_POSITIVE', 'RESOLVED'] } },
-        _count: { _all: true },
-      }),
-      this.prisma.proposedFix.groupBy({
-        by: ['status'],
-        where: { ...scope, createdAt: { gte: from } },
-        _count: { _all: true },
-      }),
-      this.prisma.approvalRequest.groupBy({
-        by: ['status'],
-        where: { ...scope, createdAt: { gte: from } },
-        _count: { _all: true },
-      }),
-    ]);
+    // Aggregated in PostgreSQL (Phase 8): loading every row of the period was ~1.7 s at 20k findings.
+    const findingScope = { ...scope, createdAt: { gte: from } };
+    const repoFilter = query.repositoryId ? Prisma.sql`AND repository_id = ${query.repositoryId}::uuid` : Prisma.empty;
+    const [sessionsByStatus, bySeverity, byCategory, byStatus, sessionDays, findingDays, triaged, fixes, approvals] =
+      await Promise.all([
+        this.prisma.reviewSession.groupBy({ by: ['status'], where: findingScope, _count: { _all: true } }),
+        this.prisma.reviewFinding.groupBy({ by: ['severity'], where: findingScope, _count: { _all: true } }),
+        this.prisma.reviewFinding.groupBy({ by: ['category'], where: findingScope, _count: { _all: true } }),
+        this.prisma.reviewFinding.groupBy({ by: ['status'], where: findingScope, _count: { _all: true } }),
+        this.prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
+        SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, count(*) AS count
+        FROM review_sessions
+        WHERE organization_id = ${tenant.organizationId}::uuid AND created_at >= ${from} ${repoFilter}
+        GROUP BY 1`,
+        this.prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
+        SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, count(*) AS count
+        FROM review_findings
+        WHERE organization_id = ${tenant.organizationId}::uuid AND created_at >= ${from} ${repoFilter}
+        GROUP BY 1`,
+        this.prisma.reviewFinding.groupBy({
+          by: ['status'],
+          where: { ...scope, updatedAt: { gte: from }, status: { in: ['DISMISSED', 'FALSE_POSITIVE', 'RESOLVED'] } },
+          _count: { _all: true },
+        }),
+        this.prisma.proposedFix.groupBy({
+          by: ['status'],
+          where: { ...scope, createdAt: { gte: from } },
+          _count: { _all: true },
+        }),
+        this.prisma.approvalRequest.groupBy({
+          by: ['status'],
+          where: { ...scope, createdAt: { gte: from } },
+          _count: { _all: true },
+        }),
+      ]);
 
     const triagedCount = (s: string) => triaged.find((t) => t.status === s)?._count._all ?? 0;
     const falsePositives = triagedCount('FALSE_POSITIVE');
@@ -311,29 +315,33 @@ export class InsightsStore {
     for (let t = from.getTime(); t <= now.getTime(); t += 86_400_000)
       daily.set(day(new Date(t)), { reviews: 0, findings: 0 });
     daily.set(day(now), daily.get(day(now)) ?? { reviews: 0, findings: 0 });
-    for (const s of sessions) {
-      const d = daily.get(day(s.createdAt));
-      if (d) d.reviews++;
+    for (const row of sessionDays) {
+      const d = daily.get(row.day);
+      if (d) d.reviews = Number(row.count);
     }
-    for (const f of findings) {
-      const d = daily.get(day(f.createdAt));
-      if (d) d.findings++;
+    for (const row of findingDays) {
+      const d = daily.get(row.day);
+      if (d) d.findings = Number(row.count);
     }
-    const lower = (r: Record<string, number>) =>
-      Object.fromEntries(Object.entries(r).map(([k, v]) => [k.toLowerCase(), v]));
     const grouped = (rows: ReadonlyArray<{ status: string; _count: { _all: number } }>) =>
       Object.fromEntries(rows.map((r) => [r.status.toLowerCase(), r._count._all]));
+    const countsBy = <K extends string>(
+      rows: ReadonlyArray<Record<K, string> & { _count: { _all: number } }>,
+      key: K,
+    ) => Object.fromEntries(rows.map((r) => [r[key], r._count._all]));
+    const total = (rows: ReadonlyArray<{ _count: { _all: number } }>) => rows.reduce((n, r) => n + r._count._all, 0);
+    const findingStatus = grouped(byStatus);
 
     return {
       from,
       to: now,
-      reviews: { total: sessions.length, byStatus: lower(countBy(sessions, (s) => s.status)) },
+      reviews: { total: total(sessionsByStatus), byStatus: grouped(sessionsByStatus) },
       findings: {
-        total: findings.length,
-        bySeverity: countBy(findings, (f) => f.severity),
-        byCategory: countBy(findings, (f) => f.category),
-        byStatus: lower(countBy(findings, (f) => f.status)),
-        published: findings.filter((f) => f.status === 'PUBLISHED').length,
+        total: total(byStatus),
+        bySeverity: countsBy(bySeverity, 'severity'),
+        byCategory: countsBy(byCategory, 'category'),
+        byStatus: findingStatus,
+        published: findingStatus['published'] ?? 0,
       },
       falsePositiveRate: triagedTotal === 0 ? null : falsePositives / triagedTotal,
       fixes: { total: fixes.reduce((n, r) => n + r._count._all, 0), byStatus: grouped(fixes) },
@@ -358,7 +366,12 @@ export class InsightsStore {
         _count: { _all: true },
         _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, costMicros: true },
       }),
-      this.prisma.modelExecution.findMany({ where, select: { createdAt: true, costMicros: true } }),
+      this.prisma.$queryRaw<Array<{ day: string; executions: bigint; cost_micros: bigint | null }>>`
+        SELECT to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, count(*) AS executions, sum(e.cost_micros) AS cost_micros
+        FROM model_executions e
+        ${query.repositoryId ? Prisma.sql`JOIN review_sessions s ON s.id = e.review_session_id AND s.repository_id = ${query.repositoryId}::uuid` : Prisma.empty}
+        WHERE e.organization_id = ${tenant.organizationId}::uuid AND e.created_at >= ${from}
+        GROUP BY 1`,
       this.prisma.proposedFix.aggregate({
         where: {
           organizationId: tenant.organizationId,
@@ -419,11 +432,11 @@ export class InsightsStore {
     for (let t = from.getTime(); t <= now.getTime(); t += 86_400_000)
       daily.set(day(new Date(t)), { executions: 0, costUsd: 0 });
     daily.set(day(now), daily.get(day(now)) ?? { executions: 0, costUsd: 0 });
-    for (const e of executions) {
-      const d = daily.get(day(e.createdAt));
+    for (const row of executions) {
+      const d = daily.get(row.day);
       if (!d) continue;
-      d.executions++;
-      d.costUsd += microsToUsd(e.costMicros) ?? 0;
+      d.executions = Number(row.executions);
+      d.costUsd = microsToUsd(row.cost_micros === null ? null : BigInt(row.cost_micros)) ?? 0;
     }
 
     const sum = (pick: (m: (typeof list)[number]) => number) => list.reduce((n, m) => n + pick(m), 0);
