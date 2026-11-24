@@ -107,9 +107,11 @@ import { AsyncState } from '../../shared/ui/async-state';
                 @if (canManage()) {
                   <td class="row">
                     @if (canEdit(m)) {
-                      <button type="button" class="btn btn-small" (click)="newLink(m)" [disabled]="busyId() === m.id">
-                        {{ m.hasPassword ? 'Password reset link' : 'New invitation link' }}
-                      </button>
+                      @if (!m.hasPassword) {
+                        <button type="button" class="btn btn-small" (click)="newLink(m)" [disabled]="busyId() === m.id">
+                          New invitation link
+                        </button>
+                      }
                       <button
                         type="button"
                         class="btn btn-small btn-danger"
@@ -214,7 +216,11 @@ export class MembersPage {
       this.form.reset({ email: '', displayName: '', role: 'MEMBER' });
       this.showErrors.set(false);
       if (setupLink) this.link.set({ email: member.email, link: setupLink });
-      else this.feedback.set({ ok: true, text: `${member.email} already has an account and can sign in now.` });
+      else
+        this.feedback.set({
+          ok: true,
+          text: `${member.email} was added. No invitation link was created because this person already has an account (or a pending invitation from another organization); they sign in with it. Forgotten passwords are reset by a platform operator.`,
+        });
     } catch (error) {
       this.feedback.set({ ok: false, text: errorMessage(error) });
     } finally {

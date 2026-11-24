@@ -9,7 +9,9 @@ import { ApiMetrics } from './metrics/api-metrics';
 export const GLOBAL_PREFIX = 'api';
 
 /** NestFactory options shared by main.ts and tests: raw bodies are kept for webhook signatures. */
-export const APP_OPTIONS = { bufferLogs: true, rawBody: true } as const;
+// bodyParser: false + useBodyParser('json') below: only JSON bodies are parsed. A cross-site HTML form
+// (urlencoded or multipart) can therefore never reach the sign-in endpoint (login CSRF).
+export const APP_OPTIONS = { bufferLogs: true, rawBody: true, bodyParser: false } as const;
 
 /** HTTP hardening shared by main.ts and the integration tests, so tests exercise the real setup. */
 export function configureApp(app: INestApplication, config: ApiConfig): void {

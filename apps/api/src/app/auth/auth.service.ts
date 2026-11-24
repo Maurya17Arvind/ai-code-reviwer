@@ -9,9 +9,10 @@ import { type RateLimiter } from '../common/rate-limit/rate-limiter';
 import { dummyPasswordHash, hashPassword, needsRehash, verifyPassword } from './password';
 import { csrfTokenFor, isWellFormedSessionToken } from './session-token';
 
-/** Failed sign-ins before the account is locked, and for how long. */
-export const MAX_FAILED_LOGINS = 5;
-export const LOCKOUT_MS = 15 * 60_000;
+/** Sign-in budgets (Redis, cluster-wide): per client IP, and per account from one client IP. */
+export const LOGIN_WINDOW_MS = 15 * 60_000;
+export const LOGIN_PER_IP = 30;
+export const LOGIN_PER_ACCOUNT_AND_IP = 5;
 /** Setup links (invitations, resets) are valid for 72 hours. */
 export const SETUP_LINK_TTL_MS = 72 * 3_600_000;
 /** lastSeenAt is written at most once a minute per session. */
@@ -52,12 +53,15 @@ export class AuthService {
     now = new Date(),
   ): Promise<{ token: string; session: SessionResponse }> {
     const normalized = email.trim().toLowerCase();
-    // Shared by all API instances (Redis): 30 attempts per IP and 10 per e-mail per 15 minutes.
-    const [byIp, byEmail] = await Promise.all([
-      this.limits.consume('login-ip', info.ipAddress ?? 'unknown', 30, 15 * 60_000),
-      this.limits.consume('login-email', normalized, 10, 15 * 60_000),
+    // Throttled per client IP and per (account, client IP). There is no account-wide lock or budget:
+    // otherwise anyone could lock a victim out just by sending wrong passwords for their e-mail.
+    const ip = info.ipAddress ?? 'unknown';
+    const accountKey = `${normalized}|${ip}`;
+    const [byIp, byAccount] = await Promise.all([
+      this.limits.consume('login-ip', ip, LOGIN_PER_IP, LOGIN_WINDOW_MS),
+      this.limits.consume('login-account-ip', accountKey, LOGIN_PER_ACCOUNT_AND_IP, LOGIN_WINDOW_MS),
     ]);
-    if (!byIp.allowed || !byEmail.allowed) {
+    if (!byIp.allowed || !byAccount.allowed) {
       throw new HttpException('Too many sign-in attempts. Try again later.', HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -66,23 +70,20 @@ export class AuthService {
       await verifyPassword(password, await dummyPasswordHash()); // equalise timing
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
-    const locked = user.lockedUntil !== null && user.lockedUntil > now;
-    const valid = await verifyPassword(password, user.passwordHash);
-    if (locked || !valid) {
-      if (!locked) await this.store.recordFailedLogin(user.id, MAX_FAILED_LOGINS, LOCKOUT_MS, now);
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      await this.store.recordFailedLogin(user.id);
       await this.store.audit({
         action: 'auth.login_failed',
         userId: user.id,
-        metadata: { reason: locked ? 'locked' : 'bad_password' },
+        metadata: { reason: 'bad_password' },
         requestId: info.requestId,
         ipAddress: info.ipAddress,
       });
-      // Same message for locked accounts: lock state is not disclosed to an attacker.
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
     if (needsRehash(user.passwordHash)) await this.store.setPassword(user.id, await hashPassword(password), now);
-    await this.limits.reset('login-email', normalized);
+    await this.limits.reset('login-account-ip', accountKey);
     const token = generateToken();
     const sessionId = await this.store.createSession({
       userId: user.id,
@@ -165,10 +166,12 @@ export class AuthService {
     const now = new Date();
     await this.store.setPassword(user.id, await hashPassword(newPassword), now);
     const revoked = await this.store.revokeUserSessions(user.id, now, auth.sessionId);
+    // An outstanding invitation/reset link must not survive a password change.
+    const linksVoided = await this.store.voidSetupTokens(user.id, now);
     await this.store.audit({
       action: 'auth.password_changed',
       userId: user.id,
-      metadata: { otherSessionsRevoked: revoked },
+      metadata: { otherSessionsRevoked: revoked, setupLinksVoided: linksVoided },
       requestId: info.requestId,
       ipAddress: info.ipAddress,
     });

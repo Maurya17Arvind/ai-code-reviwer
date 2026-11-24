@@ -1,4 +1,5 @@
 import {
+  AuthStore,
   InsightsStore,
   type MemberRecord,
   type OrganizationPolicy,
@@ -40,6 +41,7 @@ export class OrganizationsService {
     @Inject(OrganizationStore) private readonly store: OrganizationStore,
     @Inject(InsightsStore) private readonly insights: InsightsStore,
     @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(AuthStore) private readonly authStore: AuthStore,
   ) {}
 
   async create(auth: AuthContext, input: { name: string; slug: string }, meta: RequestMeta): Promise<Organization> {
@@ -74,8 +76,11 @@ export class OrganizationsService {
   ): Promise<AddMemberResponse> {
     assertCanAssign(membership.role, input.role);
     const member = await mapErrors(() => this.store.addMember(tenant(membership), input, audit(auth, meta)));
-    // New people (no password yet) get an invitation link; existing users simply sign in.
-    const setupLink = member.hasPassword ? null : await this.auth.issueSetupLink(member.userId, 'INVITE', auth.userId);
+    // Only genuinely new people get an invitation link. An existing account (or one invited by another
+    // organization) is never given a link here: whoever holds it could set that account's password.
+    const setupLink = (await this.mayIssueInvitation(member))
+      ? await this.auth.issueSetupLink(member.userId, 'INVITE', auth.userId)
+      : null;
     return { member: toMember(member), setupLink };
   }
 
@@ -100,11 +105,26 @@ export class OrganizationsService {
     await mapErrors(() => this.store.removeMember(tenant(membership), memberId, audit(auth, meta)));
   }
 
-  /** Issues a fresh single-use setup link (invitation not yet accepted, or forgotten password). */
+  /**
+   * Re-sends an invitation link. Organization admins cannot reset passwords of existing accounts:
+   * identities are platform-wide, so that would let the admin of any organization take over an
+   * account that also belongs to other organizations. Resets are an operator action
+   * (admin CLI `users-setup-link`) until e-mail delivery lets users reset their own password.
+   */
   async issueSetupLink(auth: AuthContext, membership: MembershipContext, memberId: string): Promise<SetupLink> {
     const target = await this.target(membership, memberId, auth);
     assertCanAssign(membership.role, target.role);
-    return this.auth.issueSetupLink(target.userId, target.hasPassword ? 'RESET' : 'INVITE', auth.userId);
+    if (!(await this.mayIssueInvitation(target))) {
+      throw new ForbiddenException(
+        'This person already has an account or was invited by another organization. Password resets are done by a platform operator.',
+      );
+    }
+    return this.auth.issueSetupLink(target.userId, 'INVITE', auth.userId);
+  }
+
+  /** An invitation may be (re)issued only for a user without a password who belongs to this organization only. */
+  private async mayIssueInvitation(member: Pick<MemberRecord, 'userId' | 'hasPassword'>): Promise<boolean> {
+    return !member.hasPassword && (await this.authStore.membershipCount(member.userId)) === 1;
   }
 
   private async target(membership: MembershipContext, memberId: string, auth: AuthContext): Promise<MemberRecord> {

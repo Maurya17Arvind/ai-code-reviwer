@@ -35,7 +35,12 @@ const email = `load-${randomUUID().slice(0, 8)}@example.com`;
 
 async function hashPassword(password) {
   const salt = randomBytes(16);
-  const key = await promisify(scrypt)(password.normalize('NFKC'), salt, 32, { N: 2 ** 17, r: 8, p: 1, maxmem: 256 * 2 ** 17 * 8 });
+  const key = await promisify(scrypt)(password.normalize('NFKC'), salt, 32, {
+    N: 2 ** 17,
+    r: 8,
+    p: 1,
+    maxmem: 256 * 2 ** 17 * 8,
+  });
   return ['scrypt', 2 ** 17, 8, 1, salt.toString('base64url'), key.toString('base64url')].join('$');
 }
 
@@ -52,10 +57,10 @@ async function seed() {
       `INSERT INTO users (id, email, display_name, password_hash, created_at, updated_at) VALUES ($1, $2, 'Load Test', $3, now(), now())`,
       [userId, email, await hashPassword(PASSWORD)],
     );
-    await db.query(`INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES ($1, 'Load Test', $2, now(), now())`, [
-      orgId,
-      `load-${orgId.slice(0, 8)}`,
-    ]);
+    await db.query(
+      `INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES ($1, 'Load Test', $2, now(), now())`,
+      [orgId, `load-${orgId.slice(0, 8)}`],
+    );
     await db.query(
       `INSERT INTO organization_members (id, organization_id, user_id, role, created_at, updated_at) VALUES ($1, $2, $3, 'OWNER', now(), now())`,
       [randomUUID(), orgId, userId],
@@ -100,7 +105,9 @@ async function seed() {
     );
     await db.query('COMMIT');
     await db.query('ANALYZE');
-    console.log(`Seeded ${sessions} reviews, ${FINDINGS} findings, ${FINDINGS} audit entries in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    console.log(
+      `Seeded ${sessions} reviews, ${FINDINGS} findings, ${FINDINGS} audit entries in ${((performance.now() - started) / 1000).toFixed(1)} s`,
+    );
     return orgId;
   } catch (error) {
     await db.query('ROLLBACK').catch(() => undefined);

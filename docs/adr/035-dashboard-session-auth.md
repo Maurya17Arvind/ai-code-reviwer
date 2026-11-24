@@ -31,11 +31,14 @@ and role, and never expose provider secrets. There is no e-mail service, and no 
   - `OrganizationGuard` resolves `:orgId` to the caller's role. Non-members get **404**, so the organization's existence
     is not disclosed; insufficient roles get **403**.
   - The approvals state machine still enforces its own role rules independently.
-- **Brute-force protection.**
-  - After 5 consecutive failures an account is locked for 15 minutes. This is stored in the database.
-  - In-memory limits apply per IP (30 per 15 minutes) and per e-mail (10 per 15 minutes).
-  - Unknown e-mails are verified against a dummy hash, and locked accounts get the same message as a wrong password,
-    so responses do not reveal which accounts exist.
+- **Brute-force protection** (amended in Phase 8, see SECURITY.md §2g).
+  - ~~After 5 consecutive failures an account is locked for 15 minutes.~~ The account-wide lock was removed:
+    anyone could keep a victim locked out. Attempts are now limited per client IP (30 per 15 minutes) and per
+    (account, client IP) (5 per 15 minutes), cluster-wide in Redis (ADR-037).
+  - Unknown e-mails are verified against a dummy hash, so responses do not reveal which accounts exist.
+- **Setup links** (amended in Phase 8): organization admins can only issue invitation links for users who never set
+  a password and belong to no other organization. Resetting an existing account's password is an operator
+  action until e-mail delivery exists; otherwise the admin of any organization could take over that account.
 - **Onboarding without e-mail.**
   - Admins invite people from the dashboard, and the API returns a **single-use setup link** valid for 72 hours. Only
     the token's hash is stored, and issuing a new link voids the older ones.

@@ -1,7 +1,7 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 7 complete — awaiting approval for Phase 8.** Last updated: 2026-11-24.
-> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24), Phase 7 in [§12](#12-phase-7-results-2026-11-24).
+> Status: **Phase 8 complete — all roadmap phases delivered; see the readiness review in §13.** Last updated: 2026-11-24.
+> Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24), Phase 7 in [§12](#12-phase-7-results-2026-11-24), Phase 8 in [§13](#13-phase-8-results-2026-11-24).
 
 ## 1. Phase overview
 
@@ -15,7 +15,7 @@
 | 5     | GitHub App integration                             | ✅ Complete (2026-11-23)    |
 | 6     | Approval and fix workflow                          | ✅ Complete (2026-11-24)    |
 | 7     | Angular dashboard (feature build-out)              | ✅ Complete (2026-11-24)    |
-| 8     | Production readiness                               | ⏳ Awaiting approval        |
+| 8     | Production readiness                               | ✅ Complete (2026-11-24)    |
 
 Rule: a phase is only marked complete when build, lint, type-check and tests pass, and no
 placeholder is presented as working functionality.
@@ -562,3 +562,66 @@ was added. Initial bundle: 361 kB raw / 97 kB transferred.
   (`SESSION_COOKIE_SECURE`, `TRUST_PROXY_HOPS`, HTTPS).
 - Container images and deployment of the dashboard; Content-Security-Policy for the static site.
 - Optional: e-mail delivery for invitations, SSO, and GitHub installation linking from the dashboard.
+
+## 13. Phase 8 results (2026-11-24)
+
+Branch: `feature/phase-8-production-readiness` (based on `feature/phase-7-dashboard`, which includes the fixes
+from live GitHub/GitLab testing).
+
+### 13.0 Live testing between Phase 7 and 8
+
+Real GitHub (App `ai-review-sky`, PR #1) and GitLab (MR !1) reviews ran end to end through a Cloudflare
+tunnel. Four defects were found and fixed with regression tests, on `feature/phase-7-dashboard`:
+
+- GitHub refuses thread resolution for read-only tokens: a dedicated write-scoped client is used, and a
+  failed resolution is no longer fatal.
+- Findings were marked resolved when no AI reviewer succeeded.
+- Ollama answers longer than 300 s were cut off by fetch's headers timeout: responses now stream over
+  `node:http`.
+- On user request, every reviewed commit now gets its own summary comment.
+
+### 13.1 Roadmap items
+
+| Roadmap item                | Delivered                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Security audit              | Independent review of auth, tenancy, rate limits, GitLab connect, metrics, dashboard and deployment. 1 critical (cross-tenant account takeover through setup links), 2 medium (IP spoofing, lockout DoS) and 2 low (login CSRF, headers) issues, all fixed with regression tests. `pnpm audit --prod` clean after patching `effect`. Log redaction extended. Details: SECURITY.md §2g |
+| Multi-tenant testing        | Route-matrix test over **every** registered route: 401 without a session (explicit public allowlist), 404 to other tenants for every method. RLS evaluated and deferred with reasons (ADR-038)                                                                                                                                                                                        |
+| Performance testing         | `tools/load-test/load-test.mjs`. Found analytics at p50 1.7 s with 20k findings; now aggregated in SQL, p50 132 ms (12×). New indexes for dashboard lists. All list endpoints p95 < 100 ms at 20 concurrent clients                                                                                                                                                                   |
+| Error recovery              | Maintenance job (BullMQ job scheduler): stuck reviews after a worker crash become FAILED, overdue approvals EXPIRED, expired sessions and links purged. Rate limiter falls back to memory if Redis is down                                                                                                                                                                            |
+| Observability               | `@acra/observability` (Prometheus format, bounded labels). API: requests by route template, latency, queue depth. Worker: reviews, AI runs by provider/status/error kind, approvals, maintenance                                                                                                                                                                                      |
+| Monitoring                  | Worker `/health/live`, `/health/ready`, `/metrics` (ADR-009 closed); token-protected `/api/metrics`; alert rules in OPERATIONS.md                                                                                                                                                                                                                                                     |
+| Rate limiting               | Redis-backed, cluster-wide, applied before 401s: 600/min per user, 120/min per IP without a session, 600/min per IP for webhooks; sign-in per IP and per (account, IP)                                                                                                                                                                                                                |
+| Deployment configuration    | Dockerfiles (api, worker, migrate, dashboard via unprivileged nginx with CSP), `docker-compose.prod.yml`, `.env.production.example`, CI workflow (checks, integration tests, image builds)                                                                                                                                                                                            |
+| Documentation               | DEPLOYMENT.md (rewritten), OPERATIONS.md (new runbook), SECURITY.md §2g, ADR-037/038/039, ADR-035 amended, LOCAL_DEVELOPMENT and ARCHITECTURE updated                                                                                                                                                                                                                                 |
+| Production readiness review | §13.3 below                                                                                                                                                                                                                                                                                                                                                                           |
+
+### 13.2 Verification
+
+- `pnpm check`: lint, typecheck, unit tests and build pass for **28 projects** (new: `observability`).
+- `pnpm test:integration`: all suites pass against the isolated test database and Redis index. New:
+  - rate limits across two API instances;
+  - metrics endpoints;
+  - worker health and maintenance recovery;
+  - tenant route matrix;
+  - takeover, lockout and login-CSRF regression tests.
+- Load test numbers above (development laptop, PostgreSQL in Docker).
+- **Not verified:** the Docker images were not built locally (drive C: 98 % full). CI builds them on pull
+  requests. No production environment exists yet.
+
+### 13.3 Production readiness review
+
+| Area                           | Status                 | Notes                                                                                                                                                    |
+| ------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Functional scope (Modules A–I) | ✅                     | Local CLI, GitLab, GitHub, review engine, validation, lifecycle, fixes, approvals, dashboard                                                             |
+| Tested against real providers  | 🟡                     | GitHub and GitLab end to end with a local model (Ollama). Claude/GPT not yet: provider accounts have no credit                                           |
+| Security                       | ✅ with residual risks | Audit findings fixed; residual risks listed in SECURITY.md §2g (joining without consent, enumeration, no MFA/SSO, dev-only advisories, no RLS)           |
+| Tenant isolation               | ✅                     | Route-matrix test plus store convention; RLS deferred (ADR-038)                                                                                          |
+| Scalability                    | ✅                     | Stateless API and workers scale horizontally; shared rate limits; indexed queries                                                                        |
+| Reliability                    | ✅                     | Retries for transient provider errors; maintenance recovery; idempotent webhooks and jobs                                                                |
+| Observability                  | ✅                     | Metrics, health probes, structured logs with redaction, request ids                                                                                      |
+| Deployment                     | 🟡                     | Images and compose ready and CI-built; needs a host, TLS, managed PostgreSQL/Redis and a secret manager                                                  |
+| Operations                     | 🟡                     | Runbook exists. Missing: e-mail delivery (invites and resets), self-service password reset, master-key re-encryption command, organization data deletion |
+
+**Before going live:** a host with TLS (fixed URL instead of a tunnel), managed PostgreSQL with backups,
+secrets in a secret manager, AI provider credit, Prometheus with the documented alerts, and ideally e-mail
+delivery plus SSO/MFA.

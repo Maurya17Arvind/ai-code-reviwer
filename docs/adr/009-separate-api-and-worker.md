@@ -10,4 +10,4 @@ that share libraries. The API only enqueues work. The worker only processes it.
 ## Consequences
 
 Webhook latency is isolated from review latency, the two scale independently, and failures are contained.
-Readiness of the worker will be exposed in Phase 8 (queue heartbeat or a minimal health endpoint).
+Readiness of the worker is exposed since Phase 8: `GET :3001/health/ready` (PostgreSQL + Redis), see ADR-037.

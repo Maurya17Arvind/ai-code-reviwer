@@ -84,7 +84,7 @@ The symlink-escape test is skipped on Windows machines without Developer Mode (s
 Residual risks (Phase 8):
 
 - DNS rebinding between the SSRF check and the connection (planned fix: a pinned-address agent);
-- the webhook endpoint has no rate limiting yet;
+- ~~the webhook endpoint has no rate limiting yet;~~ rate limited per IP since Phase 8;
 - the master key comes from an environment variable (planned: a KMS).
 
 ## 2d. Controls implemented in Phase 5 (GitHub App)
@@ -134,7 +134,7 @@ Residual risks:
 | Server-side sessions: random 256-bit token in an HttpOnly, SameSite=Strict cookie (`__Host-` + Secure in production); only its hash stored                                                                                           | `user_sessions`, `session-token.ts`           |
 | Absolute and idle session expiry; logout and password changes revoke sessions server-side                                                                                                                                            | `AuthService.authenticate`                    |
 | CSRF: session-bound token required in `X-CSRF-Token` on every non-GET request; login accepts JSON only                                                                                                                               | `SessionGuard`, `csrfTokenFor`                |
-| Lockout after 5 failures (15 min, in the database), plus per-IP and per-e-mail attempt limits; identical answers for unknown e-mails, wrong passwords and locked accounts                                                            | `AuthService.login`, `AttemptLimiter`         |
+| ~~Account lockout after 5 failures~~ replaced in Phase 8 by per-(account, IP) throttling (see 2g)                                                                                                                                    | `AuthService.login`                           |
 | Tenant isolation: `/organizations/:orgId` checked against membership on every request; non-members get 404; every store query filters by `organization_id`                                                                           | `OrganizationGuard`, stores (ADR-010)         |
 | Roles: ADMIN+ manages members, repositories, connections and policy; MEMBER+ triages findings and decides approvals; only OWNERs manage owners; nobody edits their own membership; the last OWNER is kept (serializable transaction) | `OrganizationsService`, `OrganizationStore`   |
 | Dashboard approvals need the request's code typed back and run through the same state machine as the CLI                                                                                                                             | `ApprovalsService` (ADR-032)                  |
@@ -147,10 +147,51 @@ Residual risks:
 
 Residual risks:
 
-- The attempt limits are per process. Cluster-wide rate limiting for all endpoints is Phase 8.
+- ~~The attempt limits are per process.~~ Cluster-wide since Phase 8.
 - Setup links are handed over by an admin, because there is no e-mail delivery yet. Anyone holding a link can set that
   user's password until the link is used or expires.
 - `TRUST_PROXY_HOPS` must match the deployment. Otherwise audit logs and attempt limits see the proxy's address.
+
+## 2g. Phase 8: security audit and hardening (2026-11-24)
+
+An independent review (a separate reviewer with no knowledge of the implementation's reasoning) of
+authentication, tenancy, rate limiting, the GitLab connect flow, metrics, the dashboard and the deployment
+files found the issues below. All are fixed and covered by regression tests.
+
+| #   | Severity     | Finding                                                                                                                                                                                                                                                                                        | Fix                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Critical** | **Account takeover across tenants.** Identities are platform-wide. Any user could create an organization, add a victim's e-mail as a member, request a "setup link" for that member (a RESET link for existing accounts), set the victim's password and act in the victim's own organizations. | Organization admins can only issue _invitation_ links for users who never set a password and belong to no other organization. Resets of existing accounts are an operator action (`admin.js users-setup-link`) until self-service e-mail resets exist. A password change voids outstanding links. Regression test: `never lets an organization admin take over an existing account`. |
+| 2   | Medium       | **Client IP spoofing.** The shipped compose trusted two proxy hops while the port was published on all interfaces, so `X-Forwarded-For` could be forged and per-IP limits bypassed.                                                                                                            | nginx accepts `X-Forwarded-For` only from `TRUSTED_PROXY_CIDR` and overwrites the header; the API trusts exactly one hop; the published port binds to 127.0.0.1 by default.                                                                                                                                                                                                          |
+| 3   | Medium       | **Lockout as denial of service.** Five wrong passwords locked any account for 15 minutes, repeatable without limit.                                                                                                                                                                            | No account-wide lock. Throttling per client IP (30 / 15 min) and per (account, IP) (5 / 15 min), cluster-wide in Redis. Test: an attacker's failures from one IP do not stop the real user from another.                                                                                                                                                                             |
+| 4   | Low          | **Login CSRF.** The API also parsed form-encoded bodies, so a cross-site form could sign a victim into an attacker's account.                                                                                                                                                                  | Only JSON bodies are parsed (`bodyParser: false` + JSON parser). Test: a form post is rejected and sets no cookie.                                                                                                                                                                                                                                                                   |
+| 5   | Low          | Missing `Permissions-Policy` / `COOP` headers on SPA routes (nginx `add_header` inheritance).                                                                                                                                                                                                  | Repeated in the `location /` block.                                                                                                                                                                                                                                                                                                                                                  |
+
+Other Phase 8 controls:
+
+| Control                                                                                                                                | Where                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Cluster-wide rate limiting (per user, per IP, webhooks), applied before 401s; 429 + Retry-After; in-memory fallback if Redis is down   | `RateLimitService` (ADR-037)           |
+| Every route verified automatically: 401 without a session (except an explicit public allowlist), 404 to other tenants for every method | `tenant-isolation.integration.spec.ts` |
+| Metrics behind a bearer token, labels without tenant data; worker health/metrics on an internal port                                   | `@acra/observability`, ADR-037         |
+| Log redaction also covers `X-CSRF-Token`, `currentPassword`, `newPassword`, `passwordHash`, `csrfToken`, `sessionToken`                | `LOG_REDACT_PATHS`                     |
+| Dependency audit: `pnpm audit --prod` clean (the `effect` ReDoS advisory GHSA-7589-6fvf-x4pw was patched via a pnpm override)          | `package.json`                         |
+| Containers run as non-root; dashboard served with a strict CSP (no inline scripts), `frame-ancestors 'none'`, `nosniff`, `no-referrer` | `infrastructure/docker` (ADR-039)      |
+| Integration tests use an isolated database and Redis index                                                                             | ADR-039                                |
+
+Accepted residual risks (documented, not fixed in Phase 8):
+
+- **Joining without consent:** an admin can add an existing account to their organization; it then appears
+  in that user's organization list. No access to the user's data or account results. An acceptance step is
+  recommended together with e-mail delivery.
+- **Account enumeration:** `hasPassword` in the member list, and a small timing difference on sign-in
+  (database writes on failures for existing accounts), can reveal whether an e-mail is registered.
+- **Distributed password guessing** against one account from many IPs is only slowed (5 per IP per 15 min
+  plus scrypt cost). MFA or SSO is recommended for production organizations.
+- **Development-only dependency advisories** (`pnpm audit`, dev dependencies: webpack-dev-server/sockjs
+  `uuid`, `glob`, `minimatch`, `esbuild` dev server; moderate/low). They are not in production images
+  (pruned to production dependencies) and are reviewed on each Nx/Angular upgrade.
+- **No PostgreSQL RLS** (ADR-038); tenant isolation is application-level and test-guarded.
+- **DNS rebinding** for self-hosted GitLab URLs remains as documented in Phase 4.
 
 ### Development-only relaxations (must not reach production)
 
@@ -164,7 +205,7 @@ Residual risks:
 | SSRF protection for self-hosted GitLab URLs (scheme allowlist, private-range blocking, DNS rebinding checks) | 4     |
 | Envelope-encrypted credentials (ADR-011)                                                                     | 4     |
 | OS-level isolation for validation commands (container, no network, CPU/memory limits)                        | 8     |
-| AuthN/AuthZ and CSRF for cookie sessions: done in Phase 7; global rate limiting (`@nestjs/throttler`)        | 8     |
+| AuthN/AuthZ and CSRF for cookie sessions (Phase 7); global rate limiting (Phase 8, own Redis limiter)        | done  |
 | Dependency scanning, container hardening, RLS evaluation, security audit                                     | 8     |
 
 ## 4. Data sent to external AI providers (implemented in Phase 3)

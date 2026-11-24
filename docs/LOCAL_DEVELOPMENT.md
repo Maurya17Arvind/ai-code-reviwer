@@ -31,7 +31,7 @@ pnpm test:integration            # containers (db/api/worker) + real temp git re
 | Command                                                   | What                                        | URL                                    |
 | --------------------------------------------------------- | ------------------------------------------- | -------------------------------------- |
 | `pnpm dev:api`                                            | NestJS API (watch)                          | http://127.0.0.1:3000/api/health/ready |
-| `pnpm dev:worker`                                         | BullMQ worker (watch)                       | —                                      |
+| `pnpm dev:worker`                                         | BullMQ worker (watch)                       | http://127.0.0.1:3001/health/ready     |
 | `pnpm dev:dashboard`                                      | Angular dev server; `/api` proxied to :3000 | http://localhost:4300                  |
 | `pnpm nx build cli && node dist/apps/cli/main.js changes` | CLI (see CLI.md)                            | —                                      |
 
@@ -55,6 +55,20 @@ Optional dashboard features need API configuration (see `.env.example`):
 
 - connecting GitLab projects from the dashboard needs `CREDENTIALS_MASTER_KEY` for the API;
 - registering webhooks needs `WEBHOOK_PUBLIC_BASE_URL`.
+
+### Integration tests never touch your development data (Phase 8)
+
+`pnpm test:integration` creates and migrates a separate database `<POSTGRES_DB>_test` (for example
+`acra_test`) on the same PostgreSQL server and uses Redis database 1, which is flushed at the start of
+each run. A running development worker (Redis database 0) never picks up test jobs. Set
+`ACRA_TEST_USE_DEV_DB=1` only if you really want the old shared behaviour.
+
+### Load test
+
+```powershell
+# API against the test database, rate limiting off, then:
+node tools/load-test/load-test.mjs --base http://127.0.0.1:3100 --findings 20000 --requests 1000 --concurrency 20
+```
 
 ## 4. Everyday commands
 

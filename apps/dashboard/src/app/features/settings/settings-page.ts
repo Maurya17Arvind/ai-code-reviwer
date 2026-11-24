@@ -46,8 +46,7 @@ const PROVIDER_LABELS = { claude: 'Anthropic Claude', gpt: 'OpenAI GPT', ollama:
         @for (p of list; track p.provider) {
           <section class="card" [attr.aria-label]="labels[p.provider]">
             <div class="row">
-              <strong>{{ labels[p.provider] }}</strong
-              ><span class="spacer"></span
+              <strong>{{ labels[p.provider] }}</strong><span class="spacer"></span
               ><acr-badge
                 [value]="p.allowedByPolicy ? 'approved' : 'skipped'"
                 [label]="p.allowedByPolicy ? 'allowed' : 'disabled by policy'"

@@ -21,6 +21,6 @@ FROM nginxinc/nginx-unprivileged:1.29.3-alpine AS runtime
 COPY infrastructure/docker/nginx-dashboard.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /workspace/dist/apps/dashboard/browser /usr/share/nginx/html
 # API_UPSTREAM (default http://api:3000) is substituted into the template at start-up.
-ENV API_UPSTREAM=http://api:3000 NGINX_ENVSUBST_FILTER=API_UPSTREAM
+ENV API_UPSTREAM=http://api:3000 TRUSTED_PROXY_CIDR=127.0.0.1/32 NGINX_ENVSUBST_FILTER=API_UPSTREAM|TRUSTED_PROXY_CIDR
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1

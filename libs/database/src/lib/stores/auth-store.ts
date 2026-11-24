@@ -54,21 +54,27 @@ export class AuthStore {
     return this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: USER_SELECT });
   }
 
-  /** Records a failed sign-in; locks the account for `lockMs` once `maxFailures` is reached. */
-  async recordFailedLogin(userId: string, maxFailures: number, lockMs: number, now: Date): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.update({
-        where: { id: userId },
-        data: { failedLoginCount: { increment: 1 } },
-        select: { failedLoginCount: true },
-      });
-      if (user.failedLoginCount >= maxFailures) {
-        await tx.user.update({
-          where: { id: userId },
-          data: { lockedUntil: new Date(now.getTime() + lockMs), failedLoginCount: 0 },
-        });
-      }
+  /**
+   * Counts a failed sign-in (shown to operators). There is deliberately no account-wide lock: anyone
+   * could otherwise keep a victim locked out by sending wrong passwords. Brute force is throttled per
+   * account and client IP instead (AuthService, Redis).
+   */
+  async recordFailedLogin(userId: string): Promise<void> {
+    await this.prisma.user.update({ where: { id: userId }, data: { failedLoginCount: { increment: 1 } } });
+  }
+
+  /** Voids every unused setup link of a user (after a password change). */
+  async voidSetupTokens(userId: string, now: Date): Promise<number> {
+    const result = await this.prisma.userSetupToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: now },
     });
+    return result.count;
+  }
+
+  /** Number of live organizations the user belongs to. */
+  async membershipCount(userId: string): Promise<number> {
+    return this.prisma.organizationMember.count({ where: { userId, organization: { deletedAt: null } } });
   }
 
   /** Successful sign-in: clears the failure counter and opens a session. */

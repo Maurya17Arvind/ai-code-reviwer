@@ -155,17 +155,26 @@ describe('Dashboard API (integration: PostgreSQL + Redis)', () => {
       expect(ApiErrorSchema.parse(result.body).message).toMatch(/CSRF/);
     });
 
-    it('locks an account after repeated failures, without saying so', async () => {
-      const email = `locked-${run}@example.com`;
-      await createUser(email, 'Locked');
+    it('throttles repeated attempts on one account from one client, and audits failures', async () => {
+      const email = `throttled-${run}@example.com`;
+      await createUser(email, 'Throttled');
       for (let i = 0; i < 5; i++) expect((await new Client(baseUrl).login(email, 'wrong password!!')).status).toBe(401);
-      const correct = await new Client(baseUrl).login(email);
-      expect(correct.status).toBe(401);
-      expect(ApiErrorSchema.parse(correct.body).message).toBe('Invalid e-mail or password');
-      const audit = await prisma.auditLog.findMany({
-        where: { action: 'auth.login_failed', actorUser: { email } },
+      const sixth = await new Client(baseUrl).login(email);
+      expect(sixth.status).toBe(429);
+      const audit = await prisma.auditLog.findMany({ where: { action: 'auth.login_failed', actorUser: { email } } });
+      expect(audit).toHaveLength(5);
+      // No account-wide lock is stored (it would let anyone lock a victim out).
+      expect((await prisma.user.findFirstOrThrow({ where: { email } })).lockedUntil).toBeNull();
+    });
+
+    it('accepts JSON only, so a cross-site form cannot sign anyone in (login CSRF)', async () => {
+      const form = await fetch(`${baseUrl}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ email: ownerEmail, password: PASSWORD }).toString(),
       });
-      expect(audit.length).toBeGreaterThanOrEqual(6);
+      expect(form.status).toBe(400);
+      expect(form.headers.get('set-cookie')).toBeNull();
     });
 
     it('logout revokes the session server-side', async () => {
@@ -229,6 +238,53 @@ describe('Dashboard API (integration: PostgreSQL + Redis)', () => {
         role: 'VIEWER',
       });
       expect(duplicate.status).toBe(409);
+    });
+
+    it('never lets an organization admin take over an existing account (setup/reset links)', async () => {
+      // An attacker with their own organization adds the owner's e-mail and asks for a link.
+      const attacker = new Client(baseUrl);
+      await attacker.login(outsiderEmail);
+      const attackerOrg = OrganizationSchema.parse(
+        (await attacker.request('POST', '/organizations', { name: 'Attacker', slug: `atk-${run}` })).body,
+      );
+      const added = AddMemberResponseSchema.parse(
+        (
+          await attacker.request('POST', `/organizations/${attackerOrg.id}/members`, {
+            email: ownerEmail,
+            displayName: 'Victim',
+            role: 'VIEWER',
+          })
+        ).body,
+      );
+      expect(added.setupLink).toBeNull();
+      const reset = await attacker.request(
+        'POST',
+        `/organizations/${attackerOrg.id}/members/${added.member.id}/setup-link`,
+      );
+      expect(reset.status).toBe(403);
+      expect(await prisma.userSetupToken.count({ where: { user: { email: ownerEmail } } })).toBe(0);
+
+      // A person with a pending invitation from another organization cannot be hijacked either.
+      const pendingEmail = `pending-${run}@example.com`;
+      await owner.request('POST', `/organizations/${orgId}/members`, {
+        email: pendingEmail,
+        displayName: 'Pending',
+        role: 'VIEWER',
+      });
+      const hijack = AddMemberResponseSchema.parse(
+        (
+          await attacker.request('POST', `/organizations/${attackerOrg.id}/members`, {
+            email: pendingEmail,
+            displayName: 'Pending',
+            role: 'VIEWER',
+          })
+        ).body,
+      );
+      expect(hijack.setupLink).toBeNull();
+      expect(
+        (await attacker.request('POST', `/organizations/${attackerOrg.id}/members/${hijack.member.id}/setup-link`))
+          .status,
+      ).toBe(403);
     });
 
     it('enforces roles: members cannot manage members or settings', async () => {

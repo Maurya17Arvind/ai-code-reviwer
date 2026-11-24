@@ -46,7 +46,11 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command:
-      ['sh', '-c', 'exec redis-server --requirepass "$${REDIS_PASSWORD}" --appendonly yes --maxmemory-policy noeviction']
+      [
+        'sh',
+        '-c',
+        'exec redis-server --requirepass "$${REDIS_PASSWORD}" --appendonly yes --maxmemory-policy noeviction',
+      ]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -74,8 +78,8 @@ services:
       DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL}
       WEBHOOK_PUBLIC_BASE_URL: ${WEBHOOK_PUBLIC_BASE_URL:?WEBHOOK_PUBLIC_BASE_URL is required}
       SESSION_COOKIE_SECURE: 'true'
-      # nginx (dashboard container) + your TLS proxy in front of it.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+      # Exactly one trusted hop: the dashboard nginx, which resolves and overwrites X-Forwarded-For.
+      TRUST_PROXY_HOPS: 1
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -102,8 +106,12 @@ services:
     restart: unless-stopped
     environment:
       API_UPSTREAM: http://api:3000
+      # Proxies whose X-Forwarded-For nginx accepts. The published port binds to 127.0.0.1, so only a
+      # TLS proxy on this host reaches it, arriving from the Docker bridge network.
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-172.16.0.0/12}
     ports:
-      - '${DASHBOARD_PORT:-8080}:8080'
+      # Bound to localhost: put your TLS proxy on this host (or set DASHBOARD_BIND deliberately).
+      - '${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:8080'
     depends_on:
       - api
 

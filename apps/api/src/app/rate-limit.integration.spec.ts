@@ -3,7 +3,9 @@ import { ApiErrorSchema } from '@acra/shared-contracts';
 import { type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
+import { createPrismaClient } from '@acra/database';
 import { ApiConfigSchema } from './api-config';
+import { hashPassword } from './auth/password';
 import { AppModule } from './app.module';
 import { APP_OPTIONS, configureApp } from './configure-app';
 
@@ -57,6 +59,31 @@ describe('Rate limiting (integration: Redis)', () => {
     // Another client is unaffected.
     const other = await fetch(`${urls[0]}/api/v1/auth/session`, { headers: { 'X-Forwarded-For': clientIp() } });
     expect(other.status).toBe(401);
+  });
+
+  it('does not let failed attempts from one IP lock the real user out (no account-wide lock)', async () => {
+    const email = `victim-${randomUUID().slice(0, 8)}@example.com`;
+    const password = 'victim correct passphrase';
+    const prisma = createPrismaClient({ databaseUrl: process.env['DATABASE_URL'] as string, poolMax: 1 });
+    try {
+      const user = await prisma.user.create({
+        data: { email, displayName: 'Victim', passwordHash: await hashPassword(password) },
+      });
+      const attackerIp = clientIp();
+      const login = (ip: string, pw: string) =>
+        fetch(`${urls[0]}/api/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'X-Forwarded-For': ip },
+          body: JSON.stringify({ email, password: pw }),
+        });
+      for (let i = 0; i < 5; i++) expect((await login(attackerIp, 'wrong guess!!')).status).toBe(401);
+      expect((await login(attackerIp, 'wrong guess!!')).status).toBe(429);
+      // The victim, from their own address, still signs in with the right password.
+      expect((await login(clientIp(), password)).status).toBe(200);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).lockedUntil).toBeNull();
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   it('never limits health probes', async () => {
