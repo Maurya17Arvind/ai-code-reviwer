@@ -1,3 +1,4 @@
+import { RateLimit } from '../common/rate-limit/rate-limit.service';
 import { Public } from '../auth/auth-context';
 import { Controller, Headers, HttpCode, Inject, Post, type RawBodyRequest, Req, Res } from '@nestjs/common';
 import { type Request, type Response } from 'express';
@@ -10,6 +11,7 @@ import { type WebhookResult } from './gitlab-webhook.service';
  * ignored/duplicate, 401 for a bad signature, 404 when GitHub is not configured.
  */
 @Public()
+@RateLimit('webhook')
 @Controller('webhooks/github')
 export class GitHubWebhookController {
   constructor(@Inject(GitHubWebhookService) private readonly webhooks: GitHubWebhookService) {}

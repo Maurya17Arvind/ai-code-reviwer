@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { useTestTargets } from './integration-targets.mts';
 
 /**
  * Vitest setup file for integration tests (`nx run-many -t integration`).
@@ -12,6 +13,8 @@ const dotEnvPath = resolve(workspaceRoot, '.env');
 if (existsSync(dotEnvPath)) {
   process.loadEnvFile(dotEnvPath);
 }
+// Never run against the development database or queues (see integration-targets.mts).
+useTestTargets();
 
 const required = (process.env['ACRA_REQUIRED_ENV'] ?? '').split(',').filter((name) => name.length > 0);
 for (const name of required) {

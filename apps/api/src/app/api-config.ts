@@ -27,6 +27,11 @@ export const ApiConfigSchema = ApiEnvSchema.extend({
   GITLAB_ALLOWED_HOSTS: GitProviderEnvSchema.shape.GITLAB_ALLOWED_HOSTS,
   GITLAB_ALLOW_PRIVATE_NETWORK: GitProviderEnvSchema.shape.GITLAB_ALLOW_PRIVATE_NETWORK,
   WEBHOOK_PUBLIC_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
+  /** Cluster-wide rate limiting through Redis (Phase 8). */
+  RATE_LIMIT_ENABLED: booleanFlag.default(true),
+  RATE_LIMIT_USER_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
+  RATE_LIMIT_ANONYMOUS_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(120),
+  RATE_LIMIT_WEBHOOK_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
 });
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { API_CONFIG, type ApiConfig, isSecureCookie } from '../api-config';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { type AuthenticatedRequest, hasRole, IS_PUBLIC, MIN_ROLE } from './auth-context';
 import { AuthService } from './auth.service';
 import { csrfTokenMatches, readCookie, sessionCookieName } from './session-token';
@@ -29,16 +30,22 @@ export class SessionGuard implements CanActivate {
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(RateLimitService) private readonly rateLimit: RateLimitService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [context.getHandler(), context.getClass()]);
-    if (isPublic) return true;
+    if (isPublic) {
+      await this.rateLimit.check(context, null);
+      return true;
+    }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = readCookie(request.headers, sessionCookieName(isSecureCookie(this.config)));
     const auth = await this.auth.authenticate(token);
+    // Counted before the 401, so invalid or guessed session tokens are rate limited too.
+    await this.rateLimit.check(context, auth?.userId ?? null);
     if (!auth) throw new UnauthorizedException('Sign in to continue');
     if (!SAFE_METHODS.has(request.method) && !csrfTokenMatches(auth.sessionToken, request.headers[CSRF_HEADER])) {
       throw new ForbiddenException('Missing or invalid CSRF token');

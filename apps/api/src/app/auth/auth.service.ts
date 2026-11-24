@@ -4,7 +4,8 @@ import { type SessionResponse } from '@acra/shared-contracts';
 import { HttpException, HttpStatus, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { API_CONFIG, type ApiConfig, dashboardUrl } from '../api-config';
 import { type AuthContext } from './auth-context';
-import { AttemptLimiter } from './login-throttle';
+import { RATE_LIMITER } from '../common/rate-limit/rate-limit.service';
+import { type RateLimiter } from '../common/rate-limit/rate-limiter';
 import { dummyPasswordHash, hashPassword, needsRehash, verifyPassword } from './password';
 import { csrfTokenFor, isWellFormedSessionToken } from './session-token';
 
@@ -32,13 +33,11 @@ interface RequestInfo {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly ipLimiter = new AttemptLimiter(30, 15 * 60_000);
-  private readonly emailLimiter = new AttemptLimiter(10, 15 * 60_000);
-  private readonly setupLimiter = new AttemptLimiter(20, 15 * 60_000);
 
   constructor(
     @Inject(AuthStore) private readonly store: AuthStore,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    @Inject(RATE_LIMITER) private readonly limits: RateLimiter,
   ) {}
 
   get sessionTtlMs(): number {
@@ -53,7 +52,12 @@ export class AuthService {
     now = new Date(),
   ): Promise<{ token: string; session: SessionResponse }> {
     const normalized = email.trim().toLowerCase();
-    if (!this.ipLimiter.tryConsume(`ip:${info.ipAddress ?? 'unknown'}`) || !this.emailLimiter.tryConsume(normalized)) {
+    // Shared by all API instances (Redis): 30 attempts per IP and 10 per e-mail per 15 minutes.
+    const [byIp, byEmail] = await Promise.all([
+      this.limits.consume('login-ip', info.ipAddress ?? 'unknown', 30, 15 * 60_000),
+      this.limits.consume('login-email', normalized, 10, 15 * 60_000),
+    ]);
+    if (!byIp.allowed || !byEmail.allowed) {
       throw new HttpException('Too many sign-in attempts. Try again later.', HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -78,7 +82,7 @@ export class AuthService {
     }
 
     if (needsRehash(user.passwordHash)) await this.store.setPassword(user.id, await hashPassword(password), now);
-    this.emailLimiter.reset(normalized);
+    await this.limits.reset('login-email', normalized);
     const token = generateToken();
     const sessionId = await this.store.createSession({
       userId: user.id,
@@ -172,7 +176,7 @@ export class AuthService {
 
   /** Accepts an invitation or reset link. The link works once; all sessions are revoked. */
   async setupPassword(token: string, password: string, info: RequestInfo): Promise<void> {
-    if (!this.setupLimiter.tryConsume(`ip:${info.ipAddress ?? 'unknown'}`)) {
+    if (!(await this.limits.consume('setup-ip', info.ipAddress ?? 'unknown', 20, 15 * 60_000)).allowed) {
       throw new HttpException('Too many attempts. Try again later.', HttpStatus.TOO_MANY_REQUESTS);
     }
     const userId = await this.store.consumeSetupToken(hashToken(token), await hashPassword(password), new Date());

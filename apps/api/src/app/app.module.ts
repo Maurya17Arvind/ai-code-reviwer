@@ -1,6 +1,7 @@
 import { createLoggerOptions } from '@acra/configuration';
 import { DatabaseModule } from '@acra/database';
-import { QueueModule } from '@acra/queue';
+import { createRedisConnectionOptions, QueueModule } from '@acra/queue';
+import { Redis } from 'ioredis';
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -12,6 +13,9 @@ import { ApprovalsService } from './approvals/approvals.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { OrganizationGuard, SessionGuard } from './auth/guards';
+import { RATE_LIMITER, RateLimitService } from './common/rate-limit/rate-limit.service';
+import { RateLimiter, RedisRateLimitStore } from './common/rate-limit/rate-limiter';
+import { RateLimiterLifecycle } from './common/rate-limit/rate-limiter.lifecycle';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { HealthController } from './health/health.controller';
 import { HEALTH_PROBE_TIMEOUT_MS, HealthService } from './health/health.service';
@@ -71,6 +75,26 @@ export class AppModule {
         { provide: APP_FILTER, useClass: AllExceptionsFilter },
         // Deny by default: every route needs a session unless it is marked @Public() (ADR-035).
         { provide: APP_GUARD, useClass: SessionGuard },
+        // Applied inside SessionGuard: per user when signed in, per IP otherwise (also before a 401).
+        RateLimitService,
+        {
+          provide: RATE_LIMITER,
+          useFactory: () =>
+            new RateLimiter(
+              config.RATE_LIMIT_ENABLED
+                ? new RedisRateLimitStore(
+                    new Redis({
+                      ...createRedisConnectionOptions(config.REDIS_URL, 'producer'),
+                      // Queue commands while (re)connecting so the first requests are counted, but
+                      // never wait more than 1 s: then the limiter falls back to in-memory limits.
+                      enableOfflineQueue: true,
+                      commandTimeout: 1_000,
+                    }),
+                  )
+                : null,
+            ),
+        },
+        RateLimiterLifecycle,
         OrganizationGuard,
         AuthService,
         OrganizationsService,

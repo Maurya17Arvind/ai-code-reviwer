@@ -24,6 +24,10 @@ export function integrationConfig(projectDir: string, name: string, options: Int
       globals: true,
       environment: 'node',
       include: [options.include ?? 'src/**/*.integration.spec.ts'],
+      // Only database suites prepare the isolated test database (git-only suites need no Docker).
+      globalSetup: requiredEnv.includes('DATABASE_URL')
+        ? [resolve(import.meta.dirname, 'integration-global-setup.mts')]
+        : [],
       setupFiles: [resolve(import.meta.dirname, 'integration-env.mts')],
       env: { ACRA_REQUIRED_ENV: requiredEnv.join(',') },
       testTimeout: options.include?.includes('.live.') ? 600_000 : 30_000,
