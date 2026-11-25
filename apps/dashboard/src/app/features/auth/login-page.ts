@@ -3,6 +3,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { errorMessage } from '../../core/api/api-error';
 import { SessionStore } from '../../core/auth/session.store';
+import { Icon } from '../../shared/ui/icon';
 
 /** Only same-app paths are accepted as return targets (no open redirects). */
 export function safeReturnUrl(value: string | undefined): string {
@@ -11,12 +12,16 @@ export function safeReturnUrl(value: string | undefined): string {
 
 @Component({
   selector: 'acr-login-page',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, Icon],
   template: `
     <main class="auth-page" id="main-content">
+      <div class="auth-brand">
+        <span class="brand-mark"><acr-icon name="logo" [size]="18" /></span>
+        AI Code Review
+      </div>
       <section class="card auth-card" aria-labelledby="login-heading">
         <h1 id="login-heading">Sign in</h1>
-        <p class="muted">AI Code Review dashboard</p>
+        <p class="muted">Welcome back. Sign in to continue to your dashboard.</p>
 
         @if (error(); as message) {
           <p class="banner banner-error" role="alert" data-testid="login-error">{{ message }}</p>
@@ -60,17 +65,7 @@ export function safeReturnUrl(value: string | undefined): string {
     </main>
   `,
   styles: `
-    .auth-page {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 1rem;
-    }
-    .auth-card {
-      width: min(26rem, 100%);
-    }
     .field-error {
-      color: var(--color-danger);
       margin: 0;
     }
   `,

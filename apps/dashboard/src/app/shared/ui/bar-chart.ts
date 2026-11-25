@@ -13,15 +13,21 @@ export interface BarDatum {
   selector: 'acr-bar-chart',
   template: `
     <figure class="chart">
-      <figcaption class="chart-title">{{ title() }}</figcaption>
+      <div class="chart-head">
+        <figcaption class="chart-title">{{ title() }}</figcaption>
+        <span class="chart-total" aria-hidden="true">{{ totalDisplay() }}</span>
+      </div>
       <svg
         [attr.viewBox]="'0 0 ' + width + ' ' + height"
         preserveAspectRatio="none"
         aria-hidden="true"
         class="chart-svg"
       >
+        @for (y of gridLines; track y) {
+          <line x1="0" [attr.x2]="width" [attr.y1]="y" [attr.y2]="y" class="chart-grid" />
+        }
         @for (bar of bars(); track bar.label) {
-          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" class="chart-bar">
+          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1.5" class="chart-bar">
             <title>{{ bar.label }}: {{ bar.display }}</title>
           </rect>
         }
@@ -62,8 +68,10 @@ export class BarChart {
 
   protected readonly width = 300;
   protected readonly height = 80;
+  protected readonly gridLines = [0.5, 20, 40, 60, 79.5];
 
   private readonly max = computed(() => Math.max(0, ...this.data().map((d) => d.value)));
+  protected readonly totalDisplay = computed(() => this.format()(this.data().reduce((sum, d) => sum + d.value, 0)));
   protected readonly maxDisplay = computed(() => this.format()(this.max()));
   protected readonly first = computed(() => this.data()[0]?.label ?? '');
   protected readonly last = computed(() => this.data().at(-1)?.label ?? '');

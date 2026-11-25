@@ -73,8 +73,8 @@ import { ShortShaPipe, UsdPipe } from '../../shared/ui/pipes';
           </dl>
         </div>
 
-        <h2>Why (model explanation, unverified)</h2>
-        <p class="untrusted">{{ f.explanation }}</p>
+        <h2>Why (model explanation, unverified) <span class="ai-label">AI</span></h2>
+        <p class="untrusted ai-content">{{ f.explanation }}</p>
 
         <h2>Patch</h2>
         <acr-diff-view [patch]="f.patch" [label]="'Patch for ' + f.filePath" />

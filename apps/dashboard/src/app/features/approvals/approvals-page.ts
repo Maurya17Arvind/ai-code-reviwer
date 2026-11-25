@@ -21,11 +21,10 @@ import { HumanizePipe, ShortShaPipe } from '../../shared/ui/pipes';
           Every write (branch, commit, merge/pull request) needs a human approval. Merging is never automated.
         </p>
       </div>
-      <div class="row" role="group" aria-label="Show">
+      <div class="segmented" role="group" aria-label="Show">
         <button
           type="button"
           class="btn btn-small"
-          [class.btn-primary]="scope() === 'open'"
           [attr.aria-pressed]="scope() === 'open'"
           (click)="scope.set('open')"
         >
@@ -34,7 +33,6 @@ import { HumanizePipe, ShortShaPipe } from '../../shared/ui/pipes';
         <button
           type="button"
           class="btn btn-small"
-          [class.btn-primary]="scope() === 'all'"
           [attr.aria-pressed]="scope() === 'all'"
           (click)="scope.set('all')"
         >

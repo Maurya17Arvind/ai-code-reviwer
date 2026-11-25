@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { Icon } from './icon';
 
 /**
  * Consistent loading / error / empty states. Content is projected only when there is data.
@@ -6,17 +7,27 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
  */
 @Component({
   selector: 'acr-async-state',
+  imports: [Icon],
   template: `
     <div aria-live="polite">
       @if (error(); as message) {
         <div class="banner banner-error" role="alert" data-testid="state-error">
-          <span>{{ message }}</span>
-          <button type="button" class="btn btn-small" (click)="retry.emit()">Retry</button>
+          <span class="row"><acr-icon name="alert" [size]="18" />{{ message }}</span>
+          <button type="button" class="btn btn-small" (click)="retry.emit()">
+            <acr-icon name="refresh" [size]="14" />Retry
+          </button>
         </div>
       } @else if (loading() && !hasData()) {
-        <p class="muted" data-testid="state-loading">{{ loadingText() }}</p>
+        <div class="skeleton" data-testid="state-loading">
+          <span class="visually-hidden">{{ loadingText() }}</span>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+        </div>
       } @else if (empty()) {
         <div class="empty" data-testid="state-empty">
+          <span class="empty-icon"><acr-icon name="inbox" [size]="22" /></span>
           <p>{{ emptyText() }}</p>
           <ng-content select="[empty-action]" />
         </div>

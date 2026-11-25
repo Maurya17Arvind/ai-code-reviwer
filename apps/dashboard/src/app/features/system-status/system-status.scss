@@ -4,41 +4,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
 
   h1 {
     margin: 0;
-    font-size: 1.5rem;
   }
-}
 
-button {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.6;
+  button:disabled {
     cursor: progress;
   }
-}
-
-.banner {
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  border-left: 4px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.banner-ok {
-  border-left-color: var(--color-success);
-}
-
-.banner-error {
-  border-left-color: var(--color-danger);
 }
 
 .checks {
@@ -46,38 +22,41 @@ button {
   padding: 0;
   margin: 1rem 0;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .check {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto 4.5rem;
   align-items: center;
   gap: 1rem;
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1.25rem;
 
   & + & {
     border-top: 1px solid var(--color-border);
   }
+
+  > .muted {
+    text-align: right;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-.badge {
-  font-size: 0.85rem;
-  font-weight: 600;
+.check-name {
+  font-weight: 550;
 }
 
 .badge-up {
   color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+  background: var(--tint-success);
 }
 
 .badge-down {
   color: var(--color-danger);
-}
-
-.muted {
-  color: var(--color-text-muted);
-}
-
-.small {
-  font-size: 0.85rem;
+  border-color: color-mix(in srgb, var(--color-danger) 30%, transparent);
+  background: var(--tint-danger);
 }

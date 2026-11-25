@@ -70,13 +70,13 @@ import { HumanizePipe, Percent0Pipe, ShortShaPipe } from '../../shared/ui/pipes'
         <p class="muted small">
           The text below was written by an AI model and validated by the platform. Treat it as a suggestion.
         </p>
-        <h2>Description</h2>
-        <p class="untrusted">{{ f.description }}</p>
+        <h2>Description <span class="ai-label">AI</span></h2>
+        <p class="untrusted ai-content">{{ f.description }}</p>
         <h2>Evidence</h2>
         <pre class="untrusted">{{ f.evidence }}</pre>
         @if (f.suggestion) {
-          <h2>Suggestion</h2>
-          <p class="untrusted">{{ f.suggestion }}</p>
+          <h2>Suggestion <span class="ai-label">AI</span></h2>
+          <p class="untrusted ai-content">{{ f.suggestion }}</p>
         }
 
         @if (f.fixes.length > 0) {

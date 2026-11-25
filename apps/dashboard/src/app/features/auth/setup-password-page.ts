@@ -3,6 +3,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { errorMessage } from '../../core/api/api-error';
 import { SessionStore } from '../../core/auth/session.store';
+import { Icon } from '../../shared/ui/icon';
 import { PASSWORD_MIN_LENGTH, passwordsMatch } from './password-match';
 
 /**
@@ -11,9 +12,13 @@ import { PASSWORD_MIN_LENGTH, passwordsMatch } from './password-match';
  */
 @Component({
   selector: 'acr-setup-password-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, Icon],
   template: `
     <main class="auth-page" id="main-content">
+      <div class="auth-brand">
+        <span class="brand-mark"><acr-icon name="logo" [size]="18" /></span>
+        AI Code Review
+      </div>
       <section class="card auth-card" aria-labelledby="setup-heading">
         <h1 id="setup-heading">Choose a password</h1>
         @if (done()) {
@@ -53,17 +58,7 @@ import { PASSWORD_MIN_LENGTH, passwordsMatch } from './password-match';
     </main>
   `,
   styles: `
-    .auth-page {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 1rem;
-    }
-    .auth-card {
-      width: min(26rem, 100%);
-    }
     .field-error {
-      color: var(--color-danger);
       margin: 0;
     }
   `,

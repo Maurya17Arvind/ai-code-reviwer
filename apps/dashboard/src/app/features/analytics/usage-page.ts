@@ -19,12 +19,11 @@ const PERIODS = [7, 30, 90] as const;
         <h1>Usage and cost</h1>
         <p class="muted">Estimated from token counts and configured prices; your provider invoice is authoritative.</p>
       </div>
-      <div class="row" role="group" aria-label="Period">
+      <div class="segmented" role="group" aria-label="Period">
         @for (p of periods; track p) {
           <button
             type="button"
             class="btn btn-small"
-            [class.btn-primary]="days() === p"
             [attr.aria-pressed]="days() === p"
             (click)="days.set(p)"
           >

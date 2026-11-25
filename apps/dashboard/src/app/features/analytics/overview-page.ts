@@ -22,12 +22,11 @@ const PERIODS = [7, 30, 90] as const;
         <h1>Overview</h1>
         <p class="muted">Review activity in the last {{ days() }} days.</p>
       </div>
-      <div class="row" role="group" aria-label="Period">
+      <div class="segmented" role="group" aria-label="Period">
         @for (p of periods; track p) {
           <button
             type="button"
             class="btn btn-small"
-            [class.btn-primary]="days() === p"
             [attr.aria-pressed]="days() === p"
             (click)="days.set(p)"
           >
@@ -145,13 +144,6 @@ const PERIODS = [7, 30, 90] as const;
     .grid.two {
       grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
       margin-top: 1rem;
-    }
-    a.card {
-      color: inherit;
-      text-decoration: none;
-    }
-    a.card:hover {
-      border-color: var(--color-accent);
     }
     h2 {
       margin-top: 0;
