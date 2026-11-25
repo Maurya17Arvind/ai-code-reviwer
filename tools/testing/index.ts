@@ -2,3 +2,4 @@
 export * from './temp-git-repo';
 export * from './fake-gitlab';
 export * from './fake-github';
+export * from './fake-smtp';

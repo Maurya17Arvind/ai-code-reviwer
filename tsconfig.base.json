@@ -32,6 +32,7 @@
       "@acra/database": ["./libs/database/src/index.ts"],
       "@acra/fix-engine": ["./libs/fix-engine/src/index.ts"],
       "@acra/observability": ["./libs/observability/src/index.ts"],
+      "@acra/mail": ["./libs/mail/src/index.ts"],
       "@acra/git-providers-core": ["./libs/git-providers/core/src/index.ts"],
       "@acra/git-providers-github": ["./libs/git-providers/github/src/index.ts"],
       "@acra/git-providers-gitlab": ["./libs/git-providers/gitlab/src/index.ts"],
