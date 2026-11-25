@@ -44,3 +44,4 @@ A _Proposed_ ADR describes a decision for a future phase; it becomes _Accepted_ 
 | [037](./037-rate-limiting-and-observability.md)                | Redis-backed rate limiting and dependency-free observability  | Accepted                                                    |
 | [038](./038-row-level-security-evaluation.md)                  | PostgreSQL Row-Level Security evaluated, not adopted yet      | Accepted                                                    |
 | [039](./039-container-deployment-and-test-isolation.md)        | Container deployment from the lockfile; isolated test targets | Accepted                                                    |
+| [040](./040-transactional-mail.md)                             | Transactional mail over SMTP, tokens minted by the worker     | Proposed (Phase 9)                                          |

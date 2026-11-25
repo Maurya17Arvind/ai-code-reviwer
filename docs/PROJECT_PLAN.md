@@ -1,6 +1,6 @@
 # Project Plan — AI Code Review Agent
 
-> Status: **Phase 8 complete — all roadmap phases delivered; see the readiness review in §13.** Last updated: 2026-11-24.
+> Status: **Phase 8 complete. SaaS roadmap (Phases 9–15) planned in §14; Phase 9 in progress (§15).** Last updated: 2026-11-25.
 > Results: Phase 1 in [§6](#6-phase-1-results-2026-11-23), Phase 2 in [§7](#7-phase-2-results-2026-11-23), Phase 3 in [§8](#8-phase-3-results-2026-11-23), Phase 4 in [§9](#9-phase-4-results-2026-11-23), Phase 5 in [§10](#10-phase-5-results-2026-11-23), Phase 6 in [§11](#11-phase-6-results-2026-11-24), Phase 7 in [§12](#12-phase-7-results-2026-11-24), Phase 8 in [§13](#13-phase-8-results-2026-11-24).
 
 ## 1. Phase overview
@@ -16,6 +16,13 @@
 | 6     | Approval and fix workflow                          | ✅ Complete (2026-11-24)    |
 | 7     | Angular dashboard (feature build-out)              | ✅ Complete (2026-11-24)    |
 | 8     | Production readiness                               | ✅ Complete (2026-11-24)    |
+| 9     | SaaS: self-service accounts and transactional mail | 🚧 In progress (§15)        |
+| 10    | SaaS: plans, entitlements and usage quotas         | Planned (§14)               |
+| 11    | SaaS: subscription billing                         | Planned (§14)               |
+| 12    | SaaS: self-service provider and AI-key onboarding  | Planned (§14)               |
+| 13    | SaaS: identity hardening (SSO, MFA, API tokens)    | Planned (§14)               |
+| 14    | SaaS: data lifecycle and compliance                | Planned (§14)               |
+| 15    | SaaS: platform operations and public site          | Planned (§14)               |
 
 Rule: a phase is only marked complete when build, lint, type-check and tests pass, and no
 placeholder is presented as working functionality.
@@ -625,3 +632,178 @@ tunnel. Four defects were found and fixed with regression tests, on `feature/pha
 **Before going live:** a host with TLS (fixed URL instead of a tunnel), managed PostgreSQL with backups,
 secrets in a secret manager, AI provider credit, Prometheus with the documented alerts, and ideally e-mail
 delivery plus SSO/MFA.
+
+## 14. SaaS roadmap (planned 2026-11-25)
+
+The platform is production-ready as a **single operator-run installation** (§13.3):
+
+- An operator creates accounts.
+- Invitations and resets are links that an admin copies by hand.
+- AI keys and provider credentials live in the server environment.
+- Nothing is metered or billed.
+
+A multi-tenant SaaS needs people to sign up, pay, connect their own providers and leave again without an
+operator in the loop.
+
+### 14.1 Gap analysis
+
+| Area                  | Today                                                                   | SaaS needs                                                                  | Phase |
+| --------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----- |
+| Account creation      | Operator CLI (`users-create`) or an admin's invitation link             | Self-service sign-up with a verified e-mail address                         | 9     |
+| E-mail                | None (ADR-035): links are copied by hand                                | Transactional mail: verification, invitations, resets, notices              | 9     |
+| Password reset        | Operator action (`users-setup-link`)                                    | Self-service, rate limited, no account enumeration                          | 9     |
+| Joining organizations | An admin adds an existing account without its consent (SECURITY.md §2g) | Invitations that the invitee accepts                                        | 9     |
+| Plans and limits      | Unlimited                                                               | Plan catalogue, per-organization entitlements, quotas, AI spend caps        | 10    |
+| Billing               | None                                                                    | Subscriptions, trials, invoices, dunning, self-service billing portal       | 11    |
+| Provider connections  | GitHub: operator CLI; GitLab: dashboard token                           | GitHub App installation flow and GitLab OAuth from the dashboard            | 12    |
+| AI keys               | One set of keys in the worker environment                               | Platform-metered keys and/or bring-your-own keys per organization           | 12    |
+| Identity              | Passwords only                                                          | SSO (GitHub, GitLab, Google/OIDC), TOTP MFA, session list, CI API tokens    | 13    |
+| Data lifecycle        | No organization deletion or export; no master-key rotation (§13.3)      | Deletion, export, retention, key rotation, terms acceptance, RLS (ADR-038)  | 14    |
+| Platform operations   | Operator CLI only                                                       | Staff console, public landing and pricing pages, status page, notifications | 15    |
+
+### 14.2 Phases
+
+Each phase follows the existing rules:
+
+- its own branch, based on the previous phase;
+- an approved scope with acceptance criteria;
+- ADRs for decisions;
+- completion only when `pnpm check` and `pnpm test:integration` pass, with no placeholder presented as working.
+
+**Phase 9: self-service accounts and transactional mail.** Mail library and worker delivery, sign-up with e-mail
+verification, self-service password reset, and e-mailed invitations that existing accounts must accept.
+Detailed in §15.
+
+**Phase 10: plans, entitlements and usage quotas.**
+
+- A plan catalogue in code (free / team / business) and a `subscriptions` record per organization.
+- An entitlement service, checked at every enforcement point: repositories, members, reviews per month, AI spend
+  per month, fix proposals.
+- Monthly usage counters, built on the existing model-execution costs.
+- Quota states in the dashboard.
+- Works without billing: an operator assigns plans until Phase 11.
+
+**Phase 11: subscription billing.**
+
+- A payment-provider adapter behind a port.
+- Hosted checkout and billing portal, so no card data touches the platform.
+- Signed webhook intake with replay protection, as in ADR-028/030.
+- Trials, grace periods and downgrade rules.
+- Verified against a fake provider server, like the Git providers.
+
+**Phase 12: self-service provider and AI-key onboarding.**
+
+- GitHub App installation from the dashboard with a signed `state`. This removes the operator step of ADR-029.
+- GitLab OAuth instead of pasted tokens.
+- Per-organization AI keys with envelope encryption (ADR-011), alongside platform-metered keys.
+
+**Phase 13: identity hardening.**
+
+- SSO through GitHub, GitLab and OIDC, on the existing server-side session (ADR-035).
+- TOTP MFA with recovery codes.
+- A list of active sessions.
+- Scoped API tokens for CI use of the review API.
+
+**Phase 14: data lifecycle and compliance.**
+
+- Organization deletion with a grace period, and data export.
+- Retention settings for review content.
+- The master-key re-encryption command.
+- Terms and privacy acceptance records.
+- A second evaluation of PostgreSQL RLS (ADR-038), now that tenants are untrusted strangers.
+
+**Phase 15: platform operations and public site.**
+
+- A staff console with a separate role, audited.
+- A public landing and pricing site, and a status page.
+- E-mail and Slack notifications for review and approval events.
+
+### 14.3 Decisions needed before the later phases
+
+| Question                 | Needed by | Options                                                                        |
+| ------------------------ | --------- | ------------------------------------------------------------------------------ |
+| Payment provider         | Phase 11  | Stripe (most common), Paddle or Lemon Squeezy (merchant of record handles VAT) |
+| AI key model             | Phase 12  | Platform keys billed by usage, bring-your-own keys, or both                    |
+| Production mail provider | Phase 9   | Any SMTP relay (SES, Postmark, Resend, SendGrid); the code only speaks SMTP    |
+| First SSO providers      | Phase 13  | GitHub and GitLab (users already have them), then generic OIDC                 |
+| Data residency           | Phase 14  | Single region first, or a region per organization                              |
+
+## 15. Phase 9 — Self-service accounts and transactional mail (in progress)
+
+Branch: `feature/phase-9-saas-accounts` (based on `feature/phase-8-production-readiness`).
+
+**Goal:** anyone can create an account, verify their e-mail, recover their password and accept invitations
+without an operator. Self-hosted installations keep working without mail: every new behaviour stays off until it
+is configured.
+
+### 15.1 Steps
+
+1. **Mail library `@acra/mail`** (`scope:server`).
+   - A `Mailer` port, an SMTP adapter and a recording fake for tests. The adapter uses nodemailer 10.6.1, pinned
+     exactly, which has no runtime dependencies.
+   - Typed templates rendered to text and HTML, with every interpolated value escaped.
+   - `MAIL_*` configuration in `libs/configuration`. Mail is disabled while `MAIL_SMTP_URL` is unset.
+   - Mailpit (`axllent/mailpit:v1.34.0`) in `docker-compose.yml` for local development.
+2. **Worker delivery (ADR-040).**
+   - A `mail` queue. Its jobs carry **ids and a purpose only**, never tokens or addresses.
+   - The worker loads the user, issues the single-use token itself, and sends the message. A raw token therefore
+     exists only in the e-mail.
+   - Retries with backoff. Delivery outcomes are audited and counted in metrics.
+3. **Self-service password reset.**
+   - `POST /v1/auth/password-reset` always answers 202.
+   - It is rate limited per IP and per address, and enqueues a reset mail only for an existing account.
+   - Dashboard "Forgot password" page.
+   - This replaces the operator-only reset of ADR-035.
+4. **E-mail verification.**
+   - New column `users.email_verified_at`.
+   - Setting a password from an e-mailed link verifies the address.
+   - Accounts created by an operator stay unverified until they use a link.
+5. **Sign-up (ADR-041).**
+   - `POST /v1/auth/signup`, enabled by `SIGNUP_ENABLED`. It always answers 202 with the same body.
+   - A new address gets a verification link that leads to password setup.
+   - An existing address gets an "you already have an account" mail with a reset option.
+   - After sign-in, the existing onboarding creates the first organization.
+6. **Invitations with consent.**
+   - A new `organization_invitations` table (e-mail, role, inviter, expiry, single use). Inviting someone creates
+     an invitation and mails it.
+   - New addresses accept by setting a password. Existing accounts accept or decline in the dashboard.
+   - Membership starts only on acceptance. This closes the "joining without consent" residual risk.
+   - Without mail, admins still get a copyable link.
+7. **Dashboard.** Sign-up, forgot-password and invitation pages. The members page shows pending invitations,
+   with resend and revoke.
+8. **Docs.**
+   - ADR-040 and ADR-041; ADR-035 amended.
+   - SECURITY.md, and DEPLOYMENT.md (SMTP, SPF/DKIM/DMARC).
+   - OPERATIONS.md (mail alerts) and API_DESIGN.md.
+
+### 15.2 Acceptance criteria
+
+- `pnpm check` and `pnpm test:integration` pass for all projects.
+- Templates escape every interpolated value. Unit tests use hostile display and organization names.
+- No raw token is written to Redis, the database or logs. Tests inspect job payloads and stored rows.
+- Sign-up and reset answer identically for known and unknown addresses: same status and body, and a bounded
+  timing difference. Both are rate limited.
+- Integration tests deliver real SMTP to a test mail server, then follow the link in the received message through
+  the API to a signed-in session.
+- An existing account can join an organization only by accepting an invitation.
+- With mail unconfigured, behaviour is unchanged from Phase 8, and the dashboard offers no mail features.
+
+### 15.3 Out of scope for Phase 9
+
+- Plans, quotas and billing (Phases 10–11).
+- SSO and MFA (Phase 13).
+- Marketing e-mail and notification preferences (Phase 15).
+- Bounce or complaint webhooks from a specific mail provider.
+
+### 15.4 Progress
+
+| Step                           | Status                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| 1. Mail library                | ✅ Library, config, Mailpit service; 30 + 5 unit tests. Mailpit not started yet (Docker daemon off) |
+| 2. Worker delivery             | —                                                                                                   |
+| 3. Self-service password reset | —                                                                                                   |
+| 4. E-mail verification         | —                                                                                                   |
+| 5. Sign-up                     | —                                                                                                   |
+| 6. Invitations with consent    | —                                                                                                   |
+| 7. Dashboard                   | —                                                                                                   |
+| 8. Docs                        | —                                                                                                   |
