@@ -13,11 +13,16 @@ export class ConfigValidationError extends Error {
   }
 }
 
+/**
+ * Validates the environment against a schema. An empty variable counts as unset, so defaults apply:
+ * docker compose passes `${VAR:-}` as an empty string, and `VAR=` in a .env file means "not set".
+ */
 export function loadEnv<TSchema extends z.ZodType>(
   schema: TSchema,
   source: Readonly<Record<string, string | undefined>> = process.env,
 ): z.infer<TSchema> {
-  const result = schema.safeParse(source);
+  const present = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value !== ''));
+  const result = schema.safeParse(present);
   if (result.success) {
     return result.data;
   }
