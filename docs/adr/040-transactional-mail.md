@@ -37,14 +37,21 @@ that shows it. Only its SHA-256 is stored. Moving delivery to a background job m
   - Each message is a typed function that returns a subject, plain text and HTML.
   - Every interpolated value is HTML-escaped in the HTML part. Display and organization names are
     attacker-controlled.
-  - Links are built only from `DASHBOARD_URL` and a token, never from request headers, which would allow host
+  - Links are built only from `DASHBOARD_PUBLIC_URL` and a token, never from request headers, which would allow host
     header injection.
   - Header values (subject, display name in `To`) are stripped of CR/LF.
 - **Delivery semantics.**
-  - BullMQ retries with exponential backoff for transient SMTP failures (connection errors, 4xx replies).
-    Permanent 5xx replies are not retried.
-  - Each attempt's outcome is counted in metrics (`acra_mail_messages_total{template,outcome}`). The final
+  - BullMQ retries with exponential backoff for transient SMTP failures (connection errors, timeouts, 4xx
+    replies). Only a 5xx reply that rejects the message or recipient (`RCPT`, `DATA`) is permanent and not
+    retried. A 5xx to `AUTH` or `MAIL FROM` means misconfiguration, which an operator can fix, so it is retried.
+  - Each attempt's outcome is counted in metrics (`acra_mail_messages_total{purpose,outcome}`, outcome = sent, skipped, retry or failed). The final
     outcome is audited, without the address or the token.
+- **Implementation details (Phase 9 step 2).**
+  - Queue `mail`, job `send-mail`, payload `{ purpose, userId, correlationId, requestId }` validated as a strict
+    object by the producer and again by the worker. Up to 6 attempts with exponential backoff from 15 s.
+  - Reset links are valid for **2 hours**. Invitation links keep 72 hours.
+  - The worker needs `DASHBOARD_PUBLIC_URL` when mail is configured and refuses to start without it.
+  - Mail audit entries have the platform as actor and the user as target, never the user as actor.
 - **Local development** uses Mailpit (`axllent/mailpit:v1.34.0`), bound to 127.0.0.1, with a web inbox to follow
   links.
 

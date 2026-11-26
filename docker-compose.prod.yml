@@ -76,6 +76,8 @@ services:
       API_PORT: 3000
       API_CORS_ORIGINS: ${DASHBOARD_PUBLIC_URL:?DASHBOARD_PUBLIC_URL is required}
       DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL}
+      # Derived from the worker's SMTP setting, so the two cannot disagree; the API gets no SMTP credentials.
+      MAIL_ENABLED: ${MAIL_SMTP_URL:+true}
       WEBHOOK_PUBLIC_BASE_URL: ${WEBHOOK_PUBLIC_BASE_URL:?WEBHOOK_PUBLIC_BASE_URL is required}
       SESSION_COOKIE_SECURE: 'true'
       # Exactly one trusted hop: the dashboard nginx, which resolves and overwrites X-Forwarded-For.
@@ -97,6 +99,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_REVIEW_MODEL: ${OPENAI_REVIEW_MODEL:-}
       AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-600000}
+      # Transactional mail (ADR-040). Empty MAIL_SMTP_URL = mail disabled. Links are built from
+      # DASHBOARD_PUBLIC_URL only.
+      DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:?DASHBOARD_PUBLIC_URL is required}
+      MAIL_SMTP_URL: ${MAIL_SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      MAIL_REQUIRE_TLS: ${MAIL_REQUIRE_TLS:-true}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

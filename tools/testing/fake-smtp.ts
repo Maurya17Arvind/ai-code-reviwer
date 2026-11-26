@@ -25,6 +25,8 @@ export class FakeSmtpServer {
   readonly messages: ReceivedMail[] = [];
   /** Recipient address (lower case) → reply line to RCPT TO, e.g. `550 5.1.1 No such user`. */
   readonly rejectRecipients = new Map<string, string>();
+  /** One-shot rejections, consumed in order before {@link rejectRecipients} applies (transient failures). */
+  private readonly rejectOnce = new Map<string, string[]>();
   private server: Server | null = null;
   private readonly sockets = new Set<Socket>();
 
@@ -50,6 +52,12 @@ export class FakeSmtpServer {
     for (const socket of this.sockets) socket.destroy();
     await new Promise<void>((resolve) => (this.server ? this.server.close(() => resolve()) : resolve()));
     this.server = null;
+  }
+
+  /** Rejects the next `times` RCPT TO for this address with `reply`, then accepts again. */
+  rejectNext(address: string, reply: string, times = 1): void {
+    const key = address.toLowerCase();
+    this.rejectOnce.set(key, [...(this.rejectOnce.get(key) ?? []), ...Array<string>(times).fill(reply)]);
   }
 
   /** Messages delivered to one address, oldest first. */
@@ -126,7 +134,7 @@ export class FakeSmtpServer {
             break;
           case 'RCPT': {
             const recipient = addressOf(argument).toLowerCase();
-            const rejection = this.rejectRecipients.get(recipient);
+            const rejection = this.rejectOnce.get(recipient)?.shift() ?? this.rejectRecipients.get(recipient);
             if (rejection) {
               reply(rejection);
             } else {

@@ -227,12 +227,15 @@ export class AuthStore {
     metadata?: Record<string, unknown>;
     requestId?: string | null;
     ipAddress?: string | null;
+    /** `system` records the platform as the actor and the user only as the target (e.g. mail delivery). */
+    actor?: 'user' | 'system';
   }): Promise<void> {
+    const byUser = entry.actor !== 'system' && entry.userId !== null;
     await this.prisma.auditLog.create({
       data: {
         organizationId: null,
-        actorType: entry.userId ? 'USER' : 'SYSTEM',
-        actorUserId: entry.userId,
+        actorType: byUser ? 'USER' : 'SYSTEM',
+        actorUserId: byUser ? entry.userId : null,
         action: entry.action,
         targetType: 'user',
         targetId: entry.userId,

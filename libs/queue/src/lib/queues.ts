@@ -12,6 +12,8 @@ export const QueueName = {
   Reviews: 'reviews',
   /** Execution of human-approved Git operations (Phase 6). */
   Approvals: 'approvals',
+  /** Transactional e-mail (Phase 9, ADR-040). */
+  Mail: 'mail',
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -59,6 +61,36 @@ export type ExecuteApprovalJob = z.infer<typeof ExecuteApprovalJobSchema>;
 export function approvalJobId(approvalId: string): string {
   return `approval_${approvalId}`;
 }
+
+export const MailJobName = {
+  Send: 'send-mail',
+} as const;
+
+/**
+ * Why a message is sent. Each purpose has one template; token-bearing purposes make the worker mint
+ * a single-use link. More purposes are added by the Phase 9 steps that need them.
+ */
+export const MailPurposeSchema = z.enum([
+  /** Self-service password reset: a single-use link to choose a new password. */
+  'password_reset',
+  /** Sign-up with an address that already has an account: no link, just a notice (no enumeration). */
+  'account_exists',
+]);
+export type MailPurpose = z.infer<typeof MailPurposeSchema>;
+
+/**
+ * Payload of mail:send-mail (ADR-040). Ids and a purpose only: never an address, a link or a token.
+ * Strict, so nothing else can be smuggled into Redis. The worker re-loads the user and mints any
+ * token itself.
+ */
+export const SendMailJobSchema = z.strictObject({
+  purpose: MailPurposeSchema,
+  userId: z.uuid(),
+  /** Correlates the request that caused the mail with its delivery in the audit log. */
+  correlationId: z.uuid(),
+  requestId: z.string().min(1).max(200).nullable(),
+});
+export type SendMailJob = z.infer<typeof SendMailJobSchema>;
 
 export const SystemJobName = {
   Heartbeat: 'heartbeat',

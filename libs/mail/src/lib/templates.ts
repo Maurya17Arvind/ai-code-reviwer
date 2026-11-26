@@ -150,7 +150,7 @@ export interface AccountExistsMail {
  */
 export function accountExistsMail(input: AccountExistsMail): RenderedMail {
   return render({
-    subject: `You already have a ${PRODUCT_NAME} account`,
+    subject: `You already have an ${PRODUCT_NAME} account`,
     greeting: `Hi ${plainName(input.displayName)},`,
     paragraphs: [
       `Someone tried to sign up with this e-mail address, but it already has an account. You can sign in as usual.`,

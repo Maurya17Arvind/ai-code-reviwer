@@ -18,6 +18,11 @@ export class WorkerMetrics {
     'error_kind',
   ]);
   readonly approvals = this.registry.counter('approval_executions_total', 'Approved operations executed.', ['status']);
+  /** outcome: sent | skipped | retry (transient failure, will retry) | failed (permanent or retries exhausted). */
+  readonly mail = this.registry.counter('mail_messages_total', 'Transactional mail delivery attempts.', [
+    'purpose',
+    'outcome',
+  ]);
   readonly maintenance = this.registry.counter('maintenance_actions_total', 'Records changed by maintenance.', [
     'action',
   ]);

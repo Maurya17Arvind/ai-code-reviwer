@@ -9,11 +9,14 @@ import {
   ExecuteApprovalJobSchema,
   type HeartbeatJob,
   HeartbeatJobSchema,
+  MailJobName,
   QueueName,
   ReviewJobName,
   type ReviewMergeRequestJob,
   ReviewMergeRequestJobSchema,
   reviewJobId,
+  type SendMailJob,
+  SendMailJobSchema,
   SystemJobName,
 } from './queues';
 import { createRedisConnectionOptions } from './redis-connection';
@@ -82,6 +85,27 @@ export async function enqueueApprovalExecution(queue: Queue, input: ExecuteAppro
   return { jobId };
 }
 
+/**
+ * Enqueues transactional mail (ADR-040). Payloads hold ids only and are validated strictly before they
+ * reach Redis. Retried with backoff for transient SMTP failures: about 15 minutes in total, after which
+ * a reset or verification link would be stale anyway.
+ */
+@Injectable()
+export class MailQueueProducer {
+  constructor(@InjectQueue(QueueName.Mail) private readonly queue: Queue) {}
+
+  async enqueue(input: SendMailJob): Promise<{ jobId: string }> {
+    const payload = SendMailJobSchema.parse(input);
+    const jobId = `mail_${payload.correlationId}`;
+    await this.queue.add(MailJobName.Send, payload, {
+      jobId,
+      attempts: 6,
+      backoff: { type: 'exponential', delay: 15_000 },
+    });
+    return { jobId };
+  }
+}
+
 /** Redis connectivity probe used by readiness checks. */
 @Injectable()
 export class QueueHealth {
@@ -121,10 +145,18 @@ export class QueueModule {
           { name: QueueName.System },
           { name: QueueName.Reviews },
           { name: QueueName.Approvals },
+          { name: QueueName.Mail },
         ),
       ],
-      providers: [SystemQueueProducer, ReviewQueueProducer, ApprovalQueueProducer, QueueHealth],
-      exports: [BullModule, SystemQueueProducer, ReviewQueueProducer, ApprovalQueueProducer, QueueHealth],
+      providers: [SystemQueueProducer, ReviewQueueProducer, ApprovalQueueProducer, MailQueueProducer, QueueHealth],
+      exports: [
+        BullModule,
+        SystemQueueProducer,
+        ReviewQueueProducer,
+        ApprovalQueueProducer,
+        MailQueueProducer,
+        QueueHealth,
+      ],
     };
   }
 }
