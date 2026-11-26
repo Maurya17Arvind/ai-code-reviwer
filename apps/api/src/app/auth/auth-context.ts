@@ -8,6 +8,8 @@ export interface AuthContext {
   readonly email: string;
   readonly displayName: string;
   readonly lastLoginAt: Date | null;
+  /** When the user proved control of the address (Phase 9); null when never verified. */
+  readonly emailVerifiedAt: Date | null;
   readonly sessionId: string;
   readonly sessionToken: string;
 }

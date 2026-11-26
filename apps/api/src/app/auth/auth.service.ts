@@ -126,7 +126,13 @@ export class AuthService {
     return {
       token,
       session: await this.sessionResponse(
-        { userId: user.id, email: user.email, displayName: user.displayName, lastLoginAt: user.lastLoginAt },
+        {
+          userId: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          lastLoginAt: user.lastLoginAt,
+          emailVerifiedAt: user.emailVerifiedAt,
+        },
         token,
       ),
     };
@@ -149,6 +155,7 @@ export class AuthService {
       email: session.user.email,
       displayName: session.user.displayName,
       lastLoginAt: session.user.lastLoginAt,
+      emailVerifiedAt: session.user.emailVerifiedAt,
       sessionId: session.sessionId,
       sessionToken: token,
     };
@@ -165,7 +172,7 @@ export class AuthService {
   }
 
   async sessionResponse(
-    user: Pick<AuthContext, 'userId' | 'email' | 'displayName' | 'lastLoginAt'>,
+    user: Pick<AuthContext, 'userId' | 'email' | 'displayName' | 'lastLoginAt' | 'emailVerifiedAt'>,
     token: string,
   ): Promise<SessionResponse> {
     return {
@@ -174,6 +181,7 @@ export class AuthService {
         email: user.email,
         displayName: user.displayName,
         lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+        emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
       },
       memberships: await this.store.memberships(user.userId),
       csrfToken: csrfTokenFor(token),

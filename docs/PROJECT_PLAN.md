@@ -797,16 +797,16 @@ is configured.
 
 ### 15.4 Progress
 
-| Step                           | Status                                                                                                                                           |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Mail library                | ✅ Library, config, Mailpit service; 30 + 5 unit tests. Mailpit not started yet (Docker daemon off)                                              |
-| 2. Worker delivery             | 🟡 Implemented with unit tests; end-to-end suite written, not yet run (Docker stopped)                                                           |
-| 3. Self-service password reset | 🟡 API (`POST /v1/auth/password-reset`, `GET /v1/auth/features`) and dashboard page with unit tests; HTTP end-to-end test pending infrastructure |
-| 4. E-mail verification         | —                                                                                                                                                |
-| 5. Sign-up                     | —                                                                                                                                                |
-| 6. Invitations with consent    | —                                                                                                                                                |
-| 7. Dashboard                   | —                                                                                                                                                |
-| 8. Docs                        | —                                                                                                                                                |
+| Step                           | Status                                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Mail library                | ✅ Library, config, Mailpit service; 30 + 5 unit tests. Mailpit not started yet (Docker daemon off)                                                                                                           |
+| 2. Worker delivery             | 🟡 Implemented with unit tests; end-to-end suite written, not yet run (Docker stopped)                                                                                                                        |
+| 3. Self-service password reset | 🟡 API (`POST /v1/auth/password-reset`, `GET /v1/auth/features`) and dashboard page with unit tests; HTTP end-to-end test pending infrastructure                                                              |
+| 4. E-mail verification         | 🟡 `users.email_verified_at`, `user_setup_tokens.delivered_by_email` (migration written by hand, not yet applied); session and Account page show the state; integration tests written, pending infrastructure |
+| 5. Sign-up                     | —                                                                                                                                                                                                             |
+| 6. Invitations with consent    | —                                                                                                                                                                                                             |
+| 7. Dashboard                   | —                                                                                                                                                                                                             |
+| 8. Docs                        | —                                                                                                                                                                                                             |
 
 **Found along the way (fixed in Phase 9):**
 

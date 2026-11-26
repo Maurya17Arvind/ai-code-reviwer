@@ -13,7 +13,19 @@ import { PASSWORD_MIN_LENGTH, passwordsMatch } from './password-match';
     <div class="page-header">
       <div>
         <h1>Account</h1>
-        <p class="muted">{{ user()?.email }}</p>
+        <p class="muted row">
+          <span>{{ user()?.email }}</span>
+          @if (user()?.emailVerifiedAt) {
+            <span class="badge badge-success" data-testid="email-verified">Verified</span>
+          } @else {
+            <span
+              class="badge badge-neutral"
+              data-testid="email-unverified"
+              title="Verified the first time you choose a password from a link we e-mail you"
+              >Not verified</span
+            >
+          }
+        </p>
       </div>
     </div>
 

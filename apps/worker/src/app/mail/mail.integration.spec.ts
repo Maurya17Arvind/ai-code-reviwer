@@ -104,10 +104,44 @@ describe('Mail delivery (integration: PostgreSQL + Redis + SMTP)', () => {
     expect(JSON.stringify(sent?.metadata)).not.toContain(token);
     expect(JSON.stringify(sent?.metadata)).not.toContain(user.email);
 
-    // The link works exactly once.
+    expect(row?.deliveredByEmail).toBe(true);
+
+    // The link works exactly once, and using it proves control of the address (Phase 9 step 4).
     const store = app.get(AuthStore);
     expect(await store.consumeSetupToken(hashToken(token), 'scrypt$new', new Date())).toBe(user.id);
     expect(await store.consumeSetupToken(hashToken(token), 'scrypt$again', new Date())).toBeNull();
+    const verified = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(verified.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(verified.passwordHash).toBe('scrypt$new');
+  });
+
+  it('only e-mailed links verify the address, and the first verification is kept', async () => {
+    const user = await newUser('Gil');
+    const store = app.get(AuthStore);
+    // An admin-shared or operator link proves nothing about the inbox.
+    const shared = randomUUID();
+    await store.createSetupToken({
+      userId: user.id,
+      tokenHash: hashToken(shared),
+      purpose: 'INVITE',
+      createdById: null,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      now: new Date(),
+    });
+    expect(await store.consumeSetupToken(hashToken(shared), 'scrypt$a', new Date())).toBe(user.id);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).emailVerifiedAt).toBeNull();
+
+    const producer = app.get(MailQueueProducer);
+    const resetAndUse = async (at: Date) => {
+      await finished((await producer.enqueue(job('password_reset', user.id))).jobId);
+      const token = TOKEN_IN_LINK.exec(smtp.to(user.email).at(-1)?.text ?? '')?.[1] ?? '';
+      expect(await store.consumeSetupToken(hashToken(token), 'scrypt$b', at)).toBe(user.id);
+    };
+    const first = new Date();
+    await resetAndUse(first);
+    await resetAndUse(new Date(first.getTime() + 60_000));
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.emailVerifiedAt?.getTime()).toBe(first.getTime());
   });
 
   it('a newer reset mail voids the older link', async () => {

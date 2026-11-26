@@ -9,7 +9,7 @@ export const CSRF = 'csrf-token-for-tests';
 
 export function sessionFixture(role: OrganizationRole = 'OWNER'): SessionResponse {
   return {
-    user: { id: 'u1', email: 'owner@example.com', displayName: 'Owner', lastLoginAt: null },
+    user: { id: 'u1', email: 'owner@example.com', displayName: 'Owner', lastLoginAt: null, emailVerifiedAt: null },
     memberships: [{ organizationId: ORG_ID, slug: 'acme', name: 'Acme', role }],
     csrfToken: CSRF,
   };

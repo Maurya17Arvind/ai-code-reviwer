@@ -10,6 +10,7 @@ export interface AuthUser {
   readonly failedLoginCount: number;
   readonly lockedUntil: Date | null;
   readonly lastLoginAt: Date | null;
+  readonly emailVerifiedAt: Date | null;
 }
 
 export interface SessionRecord {
@@ -21,6 +22,7 @@ export interface SessionRecord {
     readonly email: string;
     readonly displayName: string;
     readonly lastLoginAt: Date | null;
+    readonly emailVerifiedAt: Date | null;
   };
 }
 
@@ -32,6 +34,7 @@ const USER_SELECT = {
   failedLoginCount: true,
   lockedUntil: true,
   lastLoginAt: true,
+  emailVerifiedAt: true,
 } as const;
 
 /**
@@ -114,7 +117,7 @@ export class AuthStore {
         id: true,
         expiresAt: true,
         lastSeenAt: true,
-        user: { select: { id: true, email: true, displayName: true, lastLoginAt: true } },
+        user: { select: { id: true, email: true, displayName: true, lastLoginAt: true, emailVerifiedAt: true } },
       },
     });
     return row ? { sessionId: row.id, expiresAt: row.expiresAt, lastSeenAt: row.lastSeenAt, user: row.user } : null;
@@ -144,7 +147,10 @@ export class AuthStore {
     });
   }
 
-  /** Issues a setup link; earlier unused links of the user are voided so only the newest works. */
+  /**
+   * Issues a setup link; earlier unused links of the user are voided so only the newest works.
+   * `deliveredByEmail` is set only by the mail worker (ADR-040): using such a link verifies the address.
+   */
   async createSetupToken(input: {
     userId: string;
     tokenHash: string;
@@ -152,6 +158,7 @@ export class AuthStore {
     createdById: string | null;
     expiresAt: Date;
     now: Date;
+    deliveredByEmail?: boolean;
   }): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.userSetupToken.updateMany({
@@ -165,6 +172,7 @@ export class AuthStore {
           purpose: input.purpose,
           createdById: input.createdById,
           expiresAt: input.expiresAt,
+          deliveredByEmail: input.deliveredByEmail ?? false,
         },
       }),
     ]);
@@ -173,13 +181,14 @@ export class AuthStore {
   /**
    * Consumes a setup link and sets the password atomically. The token is marked used with a
    * compare-and-set, so a link works exactly once even under concurrent requests. All existing
-   * sessions of the user are revoked. Returns the user id, or null for an unknown/used/expired link.
+   * sessions of the user are revoked. A link that arrived by e-mail also verifies the address (kept at
+   * its first verification). Returns the user id, or null for an unknown/used/expired link.
    */
   async consumeSetupToken(tokenHash: string, passwordHash: string, now: Date): Promise<string | null> {
     return this.prisma.$transaction(async (tx) => {
       const token = await tx.userSetupToken.findFirst({
         where: { tokenHash, usedAt: null, expiresAt: { gt: now }, user: { deletedAt: null } },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, deliveredByEmail: true },
       });
       if (!token) return null;
       const claimed = await tx.userSetupToken.updateMany({
@@ -191,6 +200,12 @@ export class AuthStore {
         where: { id: token.userId },
         data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
       });
+      if (token.deliveredByEmail) {
+        await tx.user.updateMany({
+          where: { id: token.userId, emailVerifiedAt: null },
+          data: { emailVerifiedAt: now },
+        });
+      }
       await tx.userSession.updateMany({ where: { userId: token.userId, revokedAt: null }, data: { revokedAt: now } });
       return token.userId;
     });

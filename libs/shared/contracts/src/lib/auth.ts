@@ -28,6 +28,8 @@ export const SessionUserSchema = z.object({
   email: z.string(),
   displayName: z.string(),
   lastLoginAt: NullableTimestampSchema,
+  /** When the user proved control of the address (Phase 9); null when never verified. */
+  emailVerifiedAt: NullableTimestampSchema,
 });
 export type SessionUser = z.infer<typeof SessionUserSchema>;
 

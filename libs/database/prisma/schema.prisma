@@ -80,6 +80,9 @@ model User {
   failedLoginCount  Int       @default(0) @map("failed_login_count")
   lockedUntil       DateTime? @map("locked_until") @db.Timestamptz(3)
   lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(3)
+  /// Set when the user first sets a password from a link that was delivered by e-mail (Phase 9): proof that
+  /// they control the address. Admin-shared and operator links do not verify it.
+  emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz(3)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
@@ -532,14 +535,16 @@ enum SetupTokenPurpose {
 
 /// Single-use link that lets a user set a password (invitation or admin-issued reset).
 model UserSetupToken {
-  id          String            @id @default(uuid(7)) @db.Uuid
-  userId      String            @map("user_id") @db.Uuid
-  tokenHash   String            @unique @map("token_hash") @db.Char(64)
-  purpose     SetupTokenPurpose
-  createdById String?           @map("created_by_id") @db.Uuid
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
-  usedAt      DateTime?         @map("used_at") @db.Timestamptz(3)
+  id               String            @id @default(uuid(7)) @db.Uuid
+  userId           String            @map("user_id") @db.Uuid
+  tokenHash        String            @unique @map("token_hash") @db.Char(64)
+  purpose          SetupTokenPurpose
+  createdById      String?           @map("created_by_id") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt        DateTime          @map("expires_at") @db.Timestamptz(3)
+  usedAt           DateTime?         @map("used_at") @db.Timestamptz(3)
+  /// True when the worker e-mailed this link to the user's address (ADR-040); using it verifies the address.
+  deliveredByEmail Boolean           @default(false) @map("delivered_by_email")
 
   user      User  @relation("SetupTokenUser", fields: [userId], references: [id], onDelete: Restrict)
   createdBy User? @relation("SetupTokenIssuer", fields: [createdById], references: [id], onDelete: Restrict)

@@ -93,6 +93,8 @@ export class MailDeliveryService implements OnModuleDestroy {
           createdById: null,
           expiresAt: new Date(now.getTime() + RESET_LINK_TTL_MS),
           now,
+          // Only this link reaches the user through their inbox, so using it proves they control it.
+          deliveredByEmail: true,
         });
         return passwordResetMail({
           displayName: user.displayName,
