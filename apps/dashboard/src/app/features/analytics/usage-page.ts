@@ -21,12 +21,7 @@ const PERIODS = [7, 30, 90] as const;
       </div>
       <div class="segmented" role="group" aria-label="Period">
         @for (p of periods; track p) {
-          <button
-            type="button"
-            class="btn btn-small"
-            [attr.aria-pressed]="days() === p"
-            (click)="days.set(p)"
-          >
+          <button type="button" class="btn btn-small" [attr.aria-pressed]="days() === p" (click)="days.set(p)">
             {{ p }} days
           </button>
         }

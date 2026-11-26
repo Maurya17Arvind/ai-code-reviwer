@@ -30,12 +30,7 @@ import { HumanizePipe, ShortShaPipe } from '../../shared/ui/pipes';
         >
           Open
         </button>
-        <button
-          type="button"
-          class="btn btn-small"
-          [attr.aria-pressed]="scope() === 'all'"
-          (click)="scope.set('all')"
-        >
+        <button type="button" class="btn btn-small" [attr.aria-pressed]="scope() === 'all'" (click)="scope.set('all')">
           All
         </button>
       </div>

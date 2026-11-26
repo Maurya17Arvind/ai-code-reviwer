@@ -147,7 +147,9 @@ const NAV: readonly NavItem[] = [
       color: var(--sidebar-muted);
       text-decoration: none;
       white-space: nowrap;
-      transition: background-color 0.15s var(--ease), color 0.15s var(--ease);
+      transition:
+        background-color 0.15s var(--ease),
+        color 0.15s var(--ease);
     }
     a:hover {
       color: var(--sidebar-text);

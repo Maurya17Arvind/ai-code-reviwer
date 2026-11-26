@@ -38,8 +38,9 @@ import { Icon } from '../../shared/ui/icon';
             <acr-icon name="activity" [size]="16" /><span class="nav-text">System status</span>
           </a>
           <a class="account-link" routerLink="/account" routerLinkActive="active" ariaCurrentWhenActive="page">
-            <span class="avatar" aria-hidden="true">{{ initials() }}</span
-            ><span class="nav-text">{{ user()?.displayName }}</span>
+            <span class="avatar" aria-hidden="true">{{ initials() }}</span><span class="nav-text">{{
+              user()?.displayName
+            }}</span>
           </a>
           <button type="button" class="btn btn-small btn-ghost" (click)="signOut()">
             <acr-icon name="logout" [size]="16" />Sign out
