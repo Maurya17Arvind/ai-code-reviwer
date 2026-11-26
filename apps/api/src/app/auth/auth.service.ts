@@ -1,7 +1,17 @@
 import { AuthStore } from '@acra/database';
+import { MailQueueProducer } from '@acra/queue';
 import { generateToken, hashToken } from '@acra/security';
 import { type SessionResponse } from '@acra/shared-contracts';
-import { HttpException, HttpStatus, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { API_CONFIG, type ApiConfig, dashboardUrl } from '../api-config';
 import { type AuthContext } from './auth-context';
 import { RATE_LIMITER } from '../common/rate-limit/rate-limit.service';
@@ -15,6 +25,13 @@ export const LOGIN_PER_IP = 30;
 export const LOGIN_PER_ACCOUNT_AND_IP = 5;
 /** Setup links (invitations, resets) are valid for 72 hours. */
 export const SETUP_LINK_TTL_MS = 72 * 3_600_000;
+/**
+ * Self-service reset budgets (Phase 9). Per client IP the request is refused (429): that reveals nothing
+ * about accounts. Per address it is silently dropped, so the answer stays the same for every address.
+ */
+export const RESET_WINDOW_MS = 60 * 60_000;
+export const RESET_PER_IP = 10;
+export const RESET_PER_ADDRESS = 3;
 /** lastSeenAt is written at most once a minute per session. */
 const TOUCH_INTERVAL_MS = 60_000;
 
@@ -39,7 +56,13 @@ export class AuthService {
     @Inject(AuthStore) private readonly store: AuthStore,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     @Inject(RATE_LIMITER) private readonly limits: RateLimiter,
+    @Inject(MailQueueProducer) private readonly mail: MailQueueProducer,
   ) {}
+
+  /** Whether features that depend on transactional mail are offered (ADR-040). */
+  get mailEnabled(): boolean {
+    return this.config.MAIL_ENABLED;
+  }
 
   get sessionTtlMs(): number {
     return this.config.SESSION_TTL_HOURS * 3_600_000;
@@ -191,6 +214,49 @@ export class AuthService {
       ipAddress: info.ipAddress,
     });
     this.logger.log({ userId }, 'Password set from setup link');
+  }
+
+  /**
+   * Self-service password reset (Phase 9, ADR-040). Always resolves the same way for known and unknown
+   * addresses; for a known one the worker mails a 2-hour single-use link. The API never sees the token.
+   */
+  async requestPasswordReset(email: string, info: RequestInfo): Promise<void> {
+    if (!this.mailEnabled) throw new NotFoundException();
+    const byIp = await this.limits.consume('reset-ip', info.ipAddress ?? 'unknown', RESET_PER_IP, RESET_WINDOW_MS);
+    if (!byIp.allowed) throw new HttpException('Too many requests. Try again later.', HttpStatus.TOO_MANY_REQUESTS);
+
+    const normalized = email.trim().toLowerCase();
+    // Keyed by a hash: no e-mail addresses in Redis keys. Consumed for unknown addresses too, so known and
+    // unknown addresses cost the same work up to the database lookup.
+    const byAddress = await this.limits.consume(
+      'reset-address',
+      hashToken(normalized),
+      RESET_PER_ADDRESS,
+      RESET_WINDOW_MS,
+    );
+    const user = await this.store.findUserByEmail(normalized);
+    if (!user) return;
+    if (!byAddress.allowed) {
+      await this.store.audit({
+        action: 'auth.password_reset_throttled',
+        userId: user.id,
+        actor: 'system',
+        requestId: info.requestId,
+        ipAddress: info.ipAddress,
+      });
+      return;
+    }
+    const correlationId = randomUUID();
+    await this.mail.enqueue({ purpose: 'password_reset', userId: user.id, correlationId, requestId: info.requestId });
+    // The requester is anonymous: the platform acts, the account is the target.
+    await this.store.audit({
+      action: 'auth.password_reset_requested',
+      userId: user.id,
+      actor: 'system',
+      metadata: { correlationId },
+      requestId: info.requestId,
+      ipAddress: info.ipAddress,
+    });
   }
 
   /** Issues a single-use setup link for a user. Returns the URL (shown once) and its expiry. */

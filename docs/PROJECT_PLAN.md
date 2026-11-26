@@ -797,13 +797,21 @@ is configured.
 
 ### 15.4 Progress
 
-| Step                           | Status                                                                                              |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- |
-| 1. Mail library                | ✅ Library, config, Mailpit service; 30 + 5 unit tests. Mailpit not started yet (Docker daemon off) |
-| 2. Worker delivery             | —                                                                                                   |
-| 3. Self-service password reset | —                                                                                                   |
-| 4. E-mail verification         | —                                                                                                   |
-| 5. Sign-up                     | —                                                                                                   |
-| 6. Invitations with consent    | —                                                                                                   |
-| 7. Dashboard                   | —                                                                                                   |
-| 8. Docs                        | —                                                                                                   |
+| Step                           | Status                                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Mail library                | ✅ Library, config, Mailpit service; 30 + 5 unit tests. Mailpit not started yet (Docker daemon off)                                              |
+| 2. Worker delivery             | 🟡 Implemented with unit tests; end-to-end suite written, not yet run (Docker stopped)                                                           |
+| 3. Self-service password reset | 🟡 API (`POST /v1/auth/password-reset`, `GET /v1/auth/features`) and dashboard page with unit tests; HTTP end-to-end test pending infrastructure |
+| 4. E-mail verification         | —                                                                                                                                                |
+| 5. Sign-up                     | —                                                                                                                                                |
+| 6. Invitations with consent    | —                                                                                                                                                |
+| 7. Dashboard                   | —                                                                                                                                                |
+| 8. Docs                        | —                                                                                                                                                |
+
+**Found along the way (fixed in Phase 9):**
+
+- `loadEnv` treated an empty variable as a value. `docker-compose.prod.yml` passes unset optional settings as
+  empty strings (`${GITHUB_APP_ID:-}`), so a production deployment without a GitHub App or metrics token
+  failed at startup. It was not seen in Phase 8 because the images were never run. Empty now means unset, and
+  tests load the committed env templates exactly as the containers see them.
+- `apps/dashboard/src/styles.scss` (UI refresh on the Phase 8 branch) failed `pnpm format:check` in CI.

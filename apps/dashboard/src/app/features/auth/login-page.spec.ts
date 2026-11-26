@@ -23,9 +23,12 @@ describe('LoginPage', () => {
 
   afterEach(() => http.verify());
 
-  async function render(returnUrl?: string) {
+  async function render(returnUrl?: string, features: { passwordReset: boolean } | Error = { passwordReset: false }) {
     const fixture = TestBed.createComponent(LoginPage);
     if (returnUrl) fixture.componentRef.setInput('returnUrl', returnUrl);
+    const featureRequest = http.expectOne('/api/v1/auth/features');
+    if (features instanceof Error) featureRequest.error(new ProgressEvent('network'));
+    else featureRequest.flush(features);
     await fixture.whenStable();
     const element = fixture.nativeElement as HTMLElement;
     const fill = async (email: string, password: string) => {
@@ -73,6 +76,22 @@ describe('LoginPage', () => {
       expect(element.querySelector('[data-testid="login-error"]')?.textContent).toContain('Invalid e-mail or password');
     });
     expect(element.querySelector<HTMLInputElement>('#password')?.value).toBe('');
+  });
+
+  it('offers the reset link only when the installation sends mail', async () => {
+    const withReset = await render(undefined, { passwordReset: true });
+    expect(withReset.element.querySelector('[data-testid="forgot-link"]')?.getAttribute('href')).toBe(
+      '/forgot-password',
+    );
+    withReset.fixture.destroy();
+
+    const without = await render(undefined, { passwordReset: false });
+    expect(without.element.querySelector('[data-testid="forgot-link"]')).toBeNull();
+    expect(without.element.textContent).toContain('Ask a platform operator for a new setup link.');
+    without.fixture.destroy();
+
+    const unreachable = await render(undefined, new Error('offline'));
+    expect(unreachable.element.querySelector('[data-testid="forgot-link"]')).toBeNull();
   });
 
   it('only accepts same-app return URLs (no open redirect)', () => {

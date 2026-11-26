@@ -59,3 +59,18 @@ export const ChangePasswordRequestSchema = z.object({
   newPassword: PasswordSchema,
 });
 export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;
+
+/**
+ * Self-service password reset (Phase 9). The API answers 202 with the same body whether or not the
+ * address has an account; the reset link arrives by e-mail only.
+ */
+export const PasswordResetRequestSchema = z.object({
+  email: EmailSchema,
+});
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
+
+/** Public: which self-service features this installation offers (they need transactional mail). */
+export const AuthFeaturesResponseSchema = z.object({
+  passwordReset: z.boolean(),
+});
+export type AuthFeaturesResponse = z.infer<typeof AuthFeaturesResponseSchema>;

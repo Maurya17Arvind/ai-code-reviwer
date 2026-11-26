@@ -12,6 +12,12 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/auth/login-page').then((m) => m.LoginPage),
   },
   {
+    path: 'forgot-password',
+    title: title('Reset password'),
+    canActivate: [guestGuard],
+    loadComponent: () => import('./features/auth/forgot-password-page').then((m) => m.ForgotPasswordPage),
+  },
+  {
     path: 'setup-password',
     title: title('Choose a password'),
     loadComponent: () => import('./features/auth/setup-password-page').then((m) => m.SetupPasswordPage),

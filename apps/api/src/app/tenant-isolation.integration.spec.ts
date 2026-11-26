@@ -18,6 +18,9 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/webhooks/github',
   'POST /api/v1/auth/login',
   'POST /api/v1/auth/setup-password',
+  // Phase 9: self-service password reset (always 202, rate limited) and the features it depends on.
+  'POST /api/v1/auth/password-reset',
+  'GET /api/v1/auth/features',
 ]);
 
 const HTTP_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
